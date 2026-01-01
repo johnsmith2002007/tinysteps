@@ -1,4 +1,14 @@
 // Frank - Assignment Helper App
+
+// Conversation modes (final set)
+const MODES = {
+    LISTENING: 'listening',
+    CLARIFYING: 'clarifying',
+    SHRINKING: 'shrinking',
+    STEPPING: 'stepping',
+    PAUSED: 'paused'
+};
+
 class AssignmentHelper {
     constructor() {
         this.savedAssignments = this.loadSavedAssignments();
@@ -6,9 +16,445 @@ class AssignmentHelper {
         this.currentProgress = null;
         this.funFactTimer = null;
         this.conversationState = null; // Track question-answer flow for resilience help
+        
+        // Single source of truth for conversation state
+        this.conversationMode = null; // Uses MODES constant
+        this.lastUserInput = null; // Store last user input for contextual responses
+        this.conversationContext = []; // Track conversation history for context
+        
         this.init();
         this.checkPermissionCard();
         this.initFunFacts();
+    }
+    
+    // Set conversation mode (single source of truth)
+    setConversationMode(mode) {
+        const validModes = Object.values(MODES);
+        if (validModes.includes(mode)) {
+            this.conversationMode = mode;
+        }
+    }
+    
+    // Classify user input into signal types
+    classifyInput(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // Check for overwhelmed signal first (highest priority)
+        const overwhelmSignals = [
+            'i can\'t', 'i cannot', 'too much', 'too hard', 'i give up',
+            'this is too much', 'can\'t do this', 'cannot do this',
+            'shutdown', 'shut down', 'freeze', 'frozen', 'stuck', 'trapped',
+            'i\'m done', 'im done', 'can\'t handle', 'cannot handle'
+        ];
+        if (overwhelmSignals.some(signal => lowerInput.includes(signal))) {
+            return { type: 'overwhelmed', input: userInput };
+        }
+        
+        // Check for request to shrink
+        const shrinkSignals = [
+            'make it smaller', 'break it down', 'too big', 'too large',
+            'smaller steps', 'tiny step', 'one step', 'simpler'
+        ];
+        if (shrinkSignals.some(signal => lowerInput.includes(signal))) {
+            return { type: 'request_to_shrink', input: userInput };
+        }
+        
+        // Check for ready for action (after clarification)
+        if (this.conversationMode === MODES.CLARIFYING || this.conversationMode === MODES.SHRINKING) {
+            // If we're in clarifying/shrinking mode and user responds, they're ready
+            if (userInput.trim().length > 0) {
+                return { type: 'ready_for_action', input: userInput };
+            }
+        }
+        
+        // Check for explanatory patterns
+        const explanatoryPatterns = [
+            /it doesn't feel/i,
+            /it doesnt feel/i,
+            /it doesn't seem/i,
+            /it doesnt seem/i,
+            /because/i,
+            /the problem is/i,
+            /what's wrong is/i,
+            /whats wrong is/i,
+            /doesn't connect/i,
+            /doesnt connect/i,
+            /not relevant/i,
+            /irrelevant/i
+        ];
+        if (explanatoryPatterns.some(pattern => pattern.test(userInput))) {
+            return { type: 'explanatory', input: userInput };
+        }
+        
+        // Check for emotional indicators
+        const emotionalKeywords = [
+            'hate', 'love', 'feel', 'feeling', 'frustrated', 'anxious', 'stressed',
+            'overwhelmed', 'stuck', 'difficult', 'hard', 'sucks', 'boring', 'pointless',
+            'useless', 'waste of time', 'don\'t care', 'dont care',
+            'impossible', 'too much', 'too hard'
+        ];
+        if (emotionalKeywords.some(keyword => lowerInput.includes(keyword))) {
+            return { type: 'emotional', input: userInput };
+        }
+        
+        // Check for action-oriented (assignment) input
+        const assignmentKeywords = [
+            'assignment', 'essay', 'paper', 'write a', 'write an', 'read the', 
+            'read a', 'read an', 'book report', 'compare', 'contrast', 'analyze',
+            'research paper', 'research project', 'homework assignment', 'due date',
+            'how do i', 'how to', 'what should i', 'help me', 'show me', 'explain',
+            'break down', 'steps', 'guide', 'walk me through'
+        ];
+        if (assignmentKeywords.some(keyword => lowerInput.includes(keyword))) {
+            return { type: 'ready_for_action', input: userInput };
+        }
+        
+        // Default: treat as emotional if short, otherwise as ready for action
+        if (userInput.split(' ').length < 10) {
+            return { type: 'emotional', input: userInput };
+        }
+        
+        return { type: 'ready_for_action', input: userInput };
+    }
+    
+    /*
+     * CONVERSATION AND TONE RULES
+     * 
+     * Frank must operate in exactly one conversation mode per turn (listening, clarifying, 
+     * shrinking, stepping, paused). A single response may not mix modes.
+     * 
+     * Frank may ask only one question per turn.
+     * 
+     * TONE RULES (remove if present):
+     * - Generic acknowledgements like "Thanks", "That's okay", "Here's a good place to start"
+     * - Premature regulation language such as "Take a breath", "Pause for a moment", or 
+     *   "You don't have to fix everything" unless the user explicitly signals overwhelm
+     * - Multi-directional guidance (no reassurance + steps + questions together)
+     * 
+     * REQUIRED ELEMENTS:
+     * Every response must include either:
+     * - A mirror using the user's own language, OR
+     * - A permission-based statement (e.g. "We don't have to fix this yet.")
+     * 
+     * ACTION BUTTONS:
+     * - Must be contextual to the last user input
+     * - Do not show "Make this smaller" or "Start this step" unless the user has indicated readiness
+     */
+    
+    // Canonical response flow
+    generateFrankResponse(userInput, context = {}) {
+        const signal = this.classifyInput(userInput);
+        this.lastUserInput = userInput;
+        
+        // Add to conversation context
+        this.conversationContext.push({
+            input: userInput,
+            signal: signal.type,
+            timestamp: Date.now()
+        });
+        
+        switch (signal.type) {
+            case 'emotional':
+                return {
+                    mode: MODES.LISTENING,
+                    message: this.mirrorEmotion(userInput),
+                    question: this.askOneClarifyingQuestion(userInput),
+                    actions: []
+                };
+                
+            case 'explanatory':
+                return {
+                    mode: MODES.CLARIFYING,
+                    message: this.reflectMeaning(userInput),
+                    question: this.narrowChoices(userInput),
+                    actions: []
+                };
+                
+            case 'overwhelmed':
+                return {
+                    mode: MODES.PAUSED,
+                    message: this.gentleReassurance(),
+                    actions: ['Pause', 'Come back later']
+                };
+                
+            case 'request_to_shrink':
+                return {
+                    mode: MODES.SHRINKING,
+                    message: this.permissionBasedTransition(),
+                    actions: ['Make this smaller']
+                };
+                
+            case 'ready_for_action':
+                // Only show action buttons if user has explicitly indicated readiness
+                // User indicates readiness by:
+                // 1. Going through clarification/shrinking modes first, OR
+                // 2. Directly asking for help with an assignment (action-oriented input)
+                const hasIndicatedReadiness = context.currentMode === MODES.CLARIFYING || 
+                                             context.currentMode === MODES.SHRINKING ||
+                                             this.conversationContext.length > 1 ||
+                                             // Direct assignment request indicates readiness
+                                             (this.conversationContext.length === 1 && 
+                                              signal.input && 
+                                              this.isDirectAssignmentRequest(signal.input));
+                
+                return {
+                    mode: MODES.STEPPING,
+                    message: this.presentNextTinyStep(context),
+                    actions: hasIndicatedReadiness ? ['Start this step', 'Make it smaller'] : []
+                };
+                
+            default:
+                // Fallback to emotional
+                return {
+                    mode: MODES.LISTENING,
+                    message: this.mirrorEmotion(userInput),
+                    question: this.askOneClarifyingQuestion(userInput),
+                    actions: []
+                };
+        }
+    }
+    
+    // Helper functions for canonical response flow
+    
+    // Check if input is a direct assignment request (indicates readiness)
+    isDirectAssignmentRequest(input) {
+        const lowerInput = input.toLowerCase();
+        const directRequestPatterns = [
+            /help me (write|do|complete|finish)/i,
+            /how do i/i,
+            /how to/i,
+            /show me/i,
+            /break down/i,
+            /steps/i,
+            /guide/i
+        ];
+        return directRequestPatterns.some(pattern => pattern.test(input));
+    }
+    
+    // Mirror emotion using user's language
+    mirrorEmotion(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        if (lowerInput.includes("hate")) {
+            return "That sounds really hard.";
+        }
+        
+        if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            return "If something feels pointless, it's way harder to care.";
+        }
+        
+        if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
+            return "When something doesn't feel meaningful, it's hard to engage with it.";
+        }
+        
+        if (lowerInput.includes("difficult") || lowerInput.includes("hard")) {
+            return "This feels like a lot right now.";
+        }
+        
+        if (lowerInput.includes("overwhelmed") || lowerInput.includes("too much")) {
+            return "This looks like a lot.";
+        }
+        
+        // Default mirror
+        return "I hear you.";
+    }
+    
+    // Ask one clarifying question based on input
+    askOneClarifyingQuestion(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        if (lowerInput.includes('hate')) {
+            return "What about it feels the worst right now?";
+        }
+        
+        if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
+        }
+        
+        if (lowerInput.includes('boring') || lowerInput.includes('pointless')) {
+            return "What's missing that would make it feel meaningful?";
+        }
+        
+        if (lowerInput.includes('difficult') || lowerInput.includes('hard')) {
+            return "What part feels the hardest?";
+        }
+        
+        if (lowerInput.includes('overwhelmed') || lowerInput.includes('too much')) {
+            return "What feels like too much?";
+        }
+        
+        // Default clarifying question
+        return "What's bothering you about this?";
+    }
+    
+    // Reflect meaning of explanatory input
+    reflectMeaning(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            return "If something feels pointless, it's way harder to care.";
+        }
+        
+        if (lowerInput.includes("doesn't connect") || lowerInput.includes("doesnt connect")) {
+            return "When something doesn't connect to your life, it's hard to see why it matters.";
+        }
+        
+        if (lowerInput.includes("because")) {
+            // Extract the reason and reflect it
+            return "I hear what you're saying.";
+        }
+        
+        // Default reflection
+        return "That makes sense.";
+    }
+    
+    // Narrow choices for explanatory input
+    narrowChoices(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant") ||
+            lowerInput.includes("doesn't connect") || lowerInput.includes("doesnt connect")) {
+            return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
+        }
+        
+        if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
+            return "What would need to change for it to feel more engaging?";
+        }
+        
+        // Default narrowing question
+        return "Tell me more about that.";
+    }
+    
+    // Gentle reassurance for overwhelmed state (only used when user explicitly signals overwhelm)
+    gentleReassurance() {
+        // Permission-based statement, no generic reassurance
+        return "You can pause whenever you need to.";
+    }
+    
+    // Permission-based transition to shrinking
+    permissionBasedTransition() {
+        return "Want to keep going, or should we make this into one tiny step?";
+    }
+    
+    // Present next tiny step for action mode
+    presentNextTinyStep(context) {
+        // Get the first step from resilience steps or assignment steps
+        if (context && context.breakdown && context.breakdown.steps && context.breakdown.steps.length > 0) {
+            const firstStep = context.breakdown.steps[0];
+            return {
+                title: firstStep.title,
+                description: firstStep.description,
+                needsInput: firstStep.needsInput || false,
+                inputPrompt: firstStep.inputPrompt || null,
+                inputPlaceholder: firstStep.inputPlaceholder || null
+            };
+        }
+        
+        // If no breakdown yet, generate one
+        if (this.currentAssignment) {
+            const breakdown = this.breakDownAssignment(this.currentAssignment);
+            if (breakdown.steps && breakdown.steps.length > 0) {
+                const firstStep = breakdown.steps[0];
+                return {
+                    title: firstStep.title,
+                    description: firstStep.description,
+                    needsInput: firstStep.needsInput || false,
+                    inputPrompt: firstStep.inputPrompt || null,
+                    inputPlaceholder: firstStep.inputPlaceholder || null
+                };
+            }
+        }
+        
+        // Default tiny step
+        return {
+            title: "One Tiny Thing",
+            description: "What's the smallest, easiest part you could do right now? Just one thing.",
+            needsInput: true,
+            inputPrompt: "What's one tiny thing you could do?",
+            inputPlaceholder: "Type one small thing..."
+        };
+    }
+    
+    // Generate contextual buttons based on mode and last user input
+    generateContextualButtons(mode, lastInput) {
+        if (!lastInput) return [];
+        
+        const lowerInput = lastInput.toLowerCase();
+        const buttons = [];
+        
+        if (mode === 'listening' || mode === 'clarifying') {
+            // No action buttons in listening/clarifying modes
+            return [];
+        }
+        
+        if (mode === 'shrinking') {
+            // After clarification, offer action
+            buttons.push({
+                text: 'Want to keep going',
+                action: 'continue'
+            });
+            buttons.push({
+                text: 'Make this into one tiny step',
+                action: 'shrink'
+            });
+        }
+        
+        if (mode === 'stepping') {
+            // Contextual buttons based on what user said
+            if (lowerInput.includes('how') || lowerInput.includes('explain')) {
+                buttons.push({
+                    text: 'Make this smaller',
+                    action: 'make-smaller'
+                });
+            } else if (lowerInput.includes('stuck') || lowerInput.includes('can\'t')) {
+                buttons.push({
+                    text: 'Want to keep talking?',
+                    action: 'talk-more'
+                });
+                buttons.push({
+                    text: 'Help me explain this to my teacher',
+                    action: 'explain-to-teacher'
+                });
+            } else if (lowerInput.includes('pause') || lowerInput.includes('later')) {
+                buttons.push({
+                    text: 'Pause',
+                    action: 'pause'
+                });
+                buttons.push({
+                    text: 'Come back later',
+                    action: 'pause'
+                });
+            }
+        }
+        
+        return buttons;
+    }
+    
+    // Create paraphrase mirror using user's own language
+    createParaphraseMirror(userInput) {
+        // Extract key phrases from user input and reflect them back
+        // This replaces generic acknowledgements like "Thanks" or "Here's a good place to start"
+        const lowerInput = userInput.toLowerCase();
+        
+        // Look for specific phrases to mirror
+        if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            return "If something feels pointless, it's way harder to care.";
+        }
+        
+        if (lowerInput.includes("hate")) {
+            return "That sounds really hard.";
+        }
+        
+        if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
+            return "When something doesn't feel meaningful, it's hard to engage with it.";
+        }
+        
+        if (lowerInput.includes("difficult") || lowerInput.includes("hard")) {
+            return "This feels like a lot right now.";
+        }
+        
+        // Default: use a simple reflection
+        return "I hear you.";
     }
 
     checkPermissionCard() {
@@ -79,7 +525,8 @@ class AssignmentHelper {
             if (this.checkInappropriateContent(input)) {
                 return;
             }
-            this.handleAnswer(input);
+            // Use canonical response flow for answers too
+            this.handleAnswerWithCanonicalFlow(input);
             return;
         }
         
@@ -94,16 +541,416 @@ class AssignmentHelper {
         }
 
         this.currentAssignment = input;
-        const breakdown = this.breakDownAssignment(input);
         
-        // Hide middle sections for resilience help
-        if (breakdown.type === 'resilience_help') {
+        // Use canonical response flow: classify, then respond once in one mode
+        const context = this.buildContext(input);
+        const response = this.generateFrankResponse(input, context);
+        
+        // Set mode from response
+        this.setConversationMode(response.mode);
+        
+        // Display the response based on mode
+        this.displayCanonicalResponse(response, input);
+    }
+    
+    // Build context for response generation
+    buildContext(input) {
+        const breakdown = this.breakDownAssignment(input);
+        return {
+            breakdown: breakdown,
+            conversationHistory: this.conversationContext,
+            currentMode: this.conversationMode
+        };
+    }
+    
+    // Display response from canonical flow
+    displayCanonicalResponse(response, originalInput) {
+        const responseContent = document.getElementById('responseContent');
+        const responseHeader = document.getElementById('responseHeader');
+        
+        // Open modal
+        this.openModal();
+        
+        // Hide/show sections based on mode
+        if (response.mode === MODES.LISTENING || response.mode === MODES.CLARIFYING || 
+            response.mode === MODES.PAUSED) {
             this.hideMiddleSections();
-            this.startConversationFlow(input);
-            return; // Don't continue with normal flow
+            if (responseHeader) {
+                responseHeader.style.display = 'none';
+            }
         } else {
             this.showMiddleSections();
-            this.displayResponse(breakdown, breakdown.type || 'general');
+            if (responseHeader) {
+                responseHeader.style.display = '';
+            }
+        }
+        
+        // Build HTML based on response structure
+        let html = '';
+        
+        // Add message
+        if (response.message) {
+            if (typeof response.message === 'string') {
+                html += `<div class="persona-message">${response.message}</div>`;
+            } else if (typeof response.message === 'object' && response.message.title) {
+                // If message is an object (like from presentNextTinyStep), render as step
+                html += this.renderStepFromMessage(response.message);
+            } else {
+                // Fallback: render as string
+                html += `<div class="persona-message">${JSON.stringify(response.message)}</div>`;
+            }
+        }
+        
+        // Add question if present
+        if (response.question) {
+            html += `
+                <div class="conversation-flow">
+                    <div class="conversation-question">
+                        <p class="question-text">${response.question}</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Add actions if present
+        if (response.actions && response.actions.length > 0) {
+            html += '<div class="contextual-buttons">';
+            response.actions.forEach(actionText => {
+                const action = this.mapActionToHandler(actionText);
+                html += `<button class="contextual-btn" data-action="${action}">${actionText}</button>`;
+            });
+            html += '</div>';
+        }
+        
+        responseContent.innerHTML = html;
+        
+        // Set up input area if in listening/clarifying mode
+        if (response.mode === MODES.LISTENING || response.mode === MODES.CLARIFYING) {
+            this.setupQuestionInput(response.mode);
+        }
+        
+        // Set up action button handlers
+        const actionButtons = responseContent.querySelectorAll('.contextual-btn');
+        actionButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.handleCanonicalAction(btn.dataset.action, originalInput);
+            });
+        });
+        
+        // Set up step input handlers if step is rendered
+        if (typeof response.message === 'object' && response.message.title) {
+            const stepInput = responseContent.querySelector('.advice-step-input');
+            const stepButton = responseContent.querySelector('.advice-start-btn');
+            
+            if (stepInput && stepButton) {
+                stepButton.addEventListener('click', () => {
+                    const answer = stepInput.value.trim();
+                    if (answer || !response.message.needsInput) {
+                        this.handleStepCompletion(answer, response.message);
+                    } else {
+                        alert('Please share your thoughts before clicking Start this step.');
+                    }
+                });
+                
+                stepInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && e.ctrlKey) {
+                        const answer = stepInput.value.trim();
+                        if (answer || !response.message.needsInput) {
+                            stepButton.click();
+                        }
+                    }
+                });
+                
+                setTimeout(() => {
+                    if (response.message.needsInput) {
+                        stepInput.focus();
+                    }
+                }, 100);
+            }
+        }
+        
+        // Hide main input section during conversation
+        const mainInputSection = document.querySelector('.main-input-section');
+        if (mainInputSection && (response.mode === MODES.LISTENING || response.mode === MODES.CLARIFYING)) {
+            mainInputSection.style.display = 'none';
+        }
+    }
+    
+    // Handle step completion
+    handleStepCompletion(answer, stepMessage) {
+        // Store answer if needed
+        if (!this.conversationState) {
+            this.conversationState = {
+                originalInput: this.currentAssignment,
+                answers: [],
+                waitingForAnswer: false
+            };
+        }
+        
+        if (answer) {
+            this.conversationState.answers.push({
+                step: stepMessage.title,
+                answer: answer
+            });
+        }
+        
+        // Mark step as complete
+        const responseContent = document.getElementById('responseContent');
+        const currentStep = responseContent.querySelector('.advice-card.step-current');
+        if (currentStep) {
+            currentStep.classList.remove('step-current');
+            currentStep.classList.add('step-complete');
+            
+            // Show quiet acknowledgment
+            const celebration = document.createElement('div');
+            celebration.className = 'step-celebration';
+            celebration.textContent = 'One step done.';
+            currentStep.appendChild(celebration);
+            
+            setTimeout(() => {
+                celebration.remove();
+            }, 2000);
+        }
+        
+        // Ask if they want to continue
+        setTimeout(() => {
+            this.askWantToKeepGoingAfterStep();
+        }, 2000);
+    }
+    
+    // Ask if user wants to keep going after completing a step
+    askWantToKeepGoingAfterStep() {
+        const responseContent = document.getElementById('responseContent');
+        const nudgeDiv = document.createElement('div');
+        nudgeDiv.className = 'keep-going-nudge';
+        nudgeDiv.innerHTML = `
+            <p class="nudge-question">Want to keep going?</p>
+            <div class="nudge-options">
+                <button class="nudge-btn nudge-yes">Yes</button>
+                <button class="nudge-btn nudge-not-now">Not right now</button>
+            </div>
+        `;
+        
+        responseContent.appendChild(nudgeDiv);
+        
+        nudgeDiv.querySelector('.nudge-yes').addEventListener('click', () => {
+            nudgeDiv.remove();
+            // Continue to next step
+            this.continueToNextStep();
+        });
+        
+        nudgeDiv.querySelector('.nudge-not-now').addEventListener('click', () => {
+            // Permission-based statement instead of generic "That's okay"
+            nudgeDiv.innerHTML = `
+                <p class="nudge-response">You can come back whenever you're ready.</p>
+            `;
+            setTimeout(() => {
+                this.pauseAndSave();
+                this.closeModal();
+            }, 2000);
+        });
+    }
+    
+    // Continue to next step
+    continueToNextStep() {
+        // Get next step from breakdown
+        if (this.currentAssignment) {
+            const breakdown = this.breakDownAssignment(this.currentAssignment);
+            const completedSteps = this.conversationState?.answers?.length || 0;
+            
+            if (breakdown.steps && breakdown.steps.length > completedSteps) {
+                const nextStep = breakdown.steps[completedSteps];
+                const context = this.buildContext(this.currentAssignment);
+                // User has indicated readiness by completing previous step
+                const response = {
+                    mode: MODES.STEPPING,
+                    message: {
+                        title: nextStep.title,
+                        description: nextStep.description,
+                        needsInput: nextStep.needsInput || false,
+                        inputPrompt: nextStep.inputPrompt || null,
+                        inputPlaceholder: nextStep.inputPlaceholder || null
+                    },
+                    question: null,
+                    actions: ['Start this step', 'Make it smaller']
+                };
+                
+                this.setConversationMode(response.mode);
+                this.displayCanonicalResponse(response, this.currentAssignment);
+            }
+        }
+    }
+    
+    // Render step from message object
+    renderStepFromMessage(stepMessage) {
+        let html = `
+            <div class="resilience-advice">
+                <div class="advice-card step-current" data-step-index="0">
+                    <h4 class="advice-title">${stepMessage.title}</h4>
+                    <p class="advice-text">${stepMessage.description}</p>
+        `;
+        
+        if (stepMessage.needsInput) {
+            html += `
+                    <div class="advice-input-area">
+                        <p class="advice-input-prompt">${stepMessage.inputPrompt || 'Share your thoughts:'}</p>
+                        <textarea 
+                            class="advice-step-input"
+                            placeholder="${stepMessage.inputPlaceholder || 'Type your answer here...'}"
+                            rows="3"
+                        ></textarea>
+                        <button class="advice-start-btn primary-btn">Start this step</button>
+                    </div>
+            `;
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
+        return html;
+    }
+    
+    // Map action text to handler name
+    mapActionToHandler(actionText) {
+        const mapping = {
+            'Pause': 'pause',
+            'Come back later': 'pause',
+            'Make this smaller': 'make-smaller',
+            'Start this step': 'start-step',
+            'Make it smaller': 'make-smaller'
+        };
+        return mapping[actionText] || actionText.toLowerCase().replace(/\s+/g, '-');
+    }
+    
+    // Handle actions from canonical response
+    handleCanonicalAction(action, originalInput) {
+        switch(action) {
+            case 'pause':
+                this.pauseAndSave();
+                break;
+            case 'make-smaller':
+                // Generate new response with shrink request
+                const shrinkResponse = this.generateFrankResponse('make it smaller', this.buildContext(originalInput));
+                this.setConversationMode(shrinkResponse.mode);
+                this.displayCanonicalResponse(shrinkResponse, originalInput);
+                break;
+            case 'start-step':
+                // Continue to next step
+                this.advanceToNextStepInFlow();
+                break;
+            default:
+                console.log('Unknown action:', action);
+        }
+    }
+    
+    // Setup question input for listening/clarifying modes
+    setupQuestionInput(mode) {
+        const responseContent = document.getElementById('responseContent');
+        const questionContainer = responseContent.querySelector('.conversation-question');
+        
+        if (questionContainer) {
+            const inputArea = document.createElement('div');
+            inputArea.className = 'question-input-area';
+            inputArea.innerHTML = `
+                <textarea 
+                    id="questionAnswerInput" 
+                    class="question-answer-input"
+                    placeholder="Type your answer here..."
+                    rows="3"
+                ></textarea>
+                <button id="questionSubmitBtn" class="question-submit-btn">Respond</button>
+            `;
+            questionContainer.appendChild(inputArea);
+            
+            const questionInput = document.getElementById('questionAnswerInput');
+            const questionSubmitBtn = document.getElementById('questionSubmitBtn');
+            
+            questionSubmitBtn.addEventListener('click', () => {
+                const answer = questionInput.value.trim();
+                if (answer) {
+                    this.handleAnswerWithCanonicalFlow(answer);
+                } else {
+                    alert('Please share your thoughts before clicking Respond.');
+                }
+            });
+            
+            questionInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    const answer = questionInput.value.trim();
+                    if (answer) {
+                        this.handleAnswerWithCanonicalFlow(answer);
+                    }
+                }
+            });
+            
+            setTimeout(() => questionInput.focus(), 100);
+        }
+    }
+    
+    // Handle answer using canonical flow
+    handleAnswerWithCanonicalFlow(answer) {
+        if (!answer || answer.trim() === '') {
+            return;
+        }
+        
+        // Check for inappropriate content
+        if (this.checkInappropriateContent(answer)) {
+            return;
+        }
+        
+        // Store answer in conversation state
+        if (!this.conversationState) {
+            this.conversationState = {
+                originalInput: this.currentAssignment,
+                answers: [],
+                waitingForAnswer: false
+            };
+        }
+        this.conversationState.answers.push(answer);
+        
+        // Show user's answer
+        const responseContent = document.getElementById('responseContent');
+        const currentQuestion = responseContent.querySelector('.conversation-question');
+        if (currentQuestion) {
+            const inputArea = currentQuestion.querySelector('.question-input-area');
+            if (inputArea) {
+                inputArea.remove();
+            }
+            
+            const answerDiv = document.createElement('div');
+            answerDiv.className = 'user-answer';
+            answerDiv.innerHTML = `<p><strong>You:</strong> ${answer}</p>`;
+            currentQuestion.appendChild(answerDiv);
+        }
+        
+        // Generate response using canonical flow
+        const context = this.buildContext(this.currentAssignment || answer);
+        const response = this.generateFrankResponse(answer, context);
+        
+        // Set mode from response
+        this.setConversationMode(response.mode);
+        
+        // Display the response
+        setTimeout(() => {
+            this.displayCanonicalResponse(response, this.currentAssignment || answer);
+        }, 500);
+    }
+    
+    // Advance to next step in flow
+    advanceToNextStepInFlow() {
+        // This will be called when user clicks "Start this step"
+        // Implementation depends on step structure
+        const responseContent = document.getElementById('responseContent');
+        const currentStep = responseContent.querySelector('.advice-card.step-current');
+        
+        if (currentStep) {
+            // Mark as complete and show next step
+            currentStep.classList.remove('step-current');
+            currentStep.classList.add('step-complete');
+            
+            // Show next step if available
+            // This would need to be integrated with the step structure
         }
     }
 
@@ -132,8 +979,8 @@ class AssignmentHelper {
     }
 
     showInappropriateContentResponse() {
-        const responseHeader = document.getElementById('responseHeaderModal');
-        const responseContent = document.getElementById('responseContentModal');
+        const responseHeader = document.getElementById('responseHeader');
+        const responseContent = document.getElementById('responseContent');
         
         // Hide header and middle sections
         if (responseHeader) {
@@ -204,7 +1051,15 @@ class AssignmentHelper {
     generateBreakdown(assignment, type) {
         const personaMessage = this.getPersonaMessage(assignment, type);
         const howToStart = this.getHowToStart(assignment, type);
-        const steps = this.getSteps(assignment, type);
+        
+        // For resilience help, check if regulation should be included
+        let steps;
+        if (type === 'resilience_help') {
+            const includeRegulation = this.detectsOverwhelmSignal(assignment);
+            steps = this.getSteps(assignment, type, includeRegulation);
+        } else {
+            steps = this.getSteps(assignment, type);
+        }
 
         return {
             type,
@@ -232,14 +1087,16 @@ class AssignmentHelper {
 
     getHowToStart(assignment, type) {
         if (type === 'resilience_help') {
+            // Permission-based statement, no generic "That's okay", no multi-directional guidance
             return {
                 title: "Let's Start Here",
-                content: `You're dealing with something difficult right now. That's okay. Let's work through this one step at a time.`
+                content: `You're dealing with something difficult right now. We don't have to fix this yet.`
             };
         } else if (type === 'compare_contrast') {
+            // Remove premature regulation ("take a deep breath"), keep only actionable guidance
             return {
                 title: "How to Get Started",
-                content: `First, take a deep breath! You're not trying to solve everything at once. Start by identifying ONE theme from the book that really stood out to you. Then, think about where you've seen something similar in the news, social media, or your own life. That connection is your starting point - everything else builds from there.`
+                content: `Start by identifying ONE theme from the book that really stood out to you. Then, think about where you've seen something similar in the news, social media, or your own life. That connection is your starting point - everything else builds from there.`
             };
         } else if (type === 'essay') {
             return {
@@ -254,9 +1111,9 @@ class AssignmentHelper {
         }
     }
 
-    getSteps(assignment, type) {
+    getSteps(assignment, type, includeRegulation = false) {
         if (type === 'resilience_help') {
-            return this.getResilienceSteps(assignment);
+            return this.getResilienceSteps(assignment, includeRegulation);
         } else if (type === 'compare_contrast') {
             return this.getCompareContrastSteps(assignment);
         } else if (type === 'essay') {
@@ -266,13 +1123,19 @@ class AssignmentHelper {
         }
     }
 
-    getResilienceSteps(assignment) {
-        return [
-            {
+    getResilienceSteps(assignment, includeRegulation = false) {
+        const steps = [];
+        
+        // Only include "Take a Breath" if user explicitly signals overwhelm
+        if (includeRegulation) {
+            steps.push({
                 title: "Take a Breath",
-                description: "Pause for a moment. Take one slow breath. You don't have to fix anything right now.",
+                description: "Pause for a moment. Take one slow breath. You can pause whenever you need to.",
                 needsInput: false
-            },
+            });
+        }
+        
+        steps.push(
             {
                 title: "Name What's Happening",
                 description: "What's going on for you right now?",
@@ -306,7 +1169,9 @@ class AssignmentHelper {
                 description: "This feeling won't last forever. You've gotten through hard things before.",
                 needsInput: false
             }
-        ];
+        );
+        
+        return steps;
     }
 
     getCompareContrastSteps(assignment) {
@@ -502,12 +1367,40 @@ class AssignmentHelper {
     }
 
     getFirstQuestion(input) {
-        // Modal Screen 1: EXACT COPY - Single question only
-        // No contextualization - always the same to reduce cognitive load
-        return {
-            acknowledgment: "This looks like a lot.",
-            question: "What's the assignment about?"
-        };
+        // Use paraphrase mirror instead of generic acknowledgment
+        const inputType = this.detectInputType(input);
+        
+        if (inputType === 'emotional') {
+            // For emotional input, use reflection + one clarifying question
+            const mirror = this.createParaphraseMirror(input);
+            
+            // Generate contextual question based on input
+            const lowerInput = input.toLowerCase();
+            let question;
+            
+            if (lowerInput.includes('hate')) {
+                question = "What about it feels the worst right now?";
+            } else if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+                question = "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
+            } else if (lowerInput.includes('boring') || lowerInput.includes('pointless')) {
+                question = "What's missing that would make it feel meaningful?";
+            } else if (lowerInput.includes('difficult') || lowerInput.includes('hard')) {
+                question = "What part feels the hardest?";
+            } else {
+                question = "What's bothering you about this?";
+            }
+            
+            return {
+                acknowledgment: mirror,
+                question: question
+            };
+        } else {
+            // For action-oriented input
+            return {
+                acknowledgment: "This looks like a lot.",
+                question: "What's the assignment about?"
+            };
+        }
     }
 
     getProbingQuestions(input) {
@@ -590,8 +1483,8 @@ class AssignmentHelper {
     }
 
     displayConversationStart(input) {
-        const responseHeader = document.getElementById('responseHeaderModal');
-        const responseContent = document.getElementById('responseContentModal');
+        const responseHeader = document.getElementById('responseHeader');
+        const responseContent = document.getElementById('responseContent');
         
         // Open modal instead of showing inline
         this.openModal();
@@ -602,14 +1495,17 @@ class AssignmentHelper {
         }
         
         // Also hide pause button for resilience help
-        const pauseBtn = document.getElementById('pauseBtnModal');
+        const pauseBtn = document.getElementById('pauseBtn');
         if (pauseBtn && FRANK_CONFIG.display.pauseButtonOnlyForAssignments) {
             pauseBtn.style.display = 'none';
         }
 
-        // Frank's first response: Acknowledge emotion before task
-        // Single question only - no follow-ups, no branching, waits
+        // Get first question with paraphrase mirror (no generic acknowledgements)
         const firstQuestion = this.getFirstQuestion(input);
+        
+        // Mode-based rendering: listening/clarifying modes show NO action buttons
+        const mode = this.conversationMode || 'listening';
+        const showButtons = mode !== 'listening' && mode !== 'clarifying';
         
         let html = `
             <div class="persona-message">${firstQuestion.acknowledgment}</div>
@@ -619,6 +1515,18 @@ class AssignmentHelper {
                 </div>
             </div>
         `;
+        
+        // Only add buttons if not in listening/clarifying mode
+        if (showButtons) {
+            const buttons = this.generateContextualButtons(mode, input);
+            if (buttons.length > 0) {
+                html += '<div class="contextual-buttons">';
+                buttons.forEach(btn => {
+                    html += `<button class="contextual-btn" data-action="${btn.action}">${btn.text}</button>`;
+                });
+                html += '</div>';
+            }
+        }
 
         responseContent.innerHTML = html;
         
@@ -666,15 +1574,137 @@ class AssignmentHelper {
             }, 100);
         }
         
+        // Set up contextual button handlers if any
+        const contextualBtns = responseContent.querySelectorAll('.contextual-btn');
+        contextualBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.handleContextualButton(btn.dataset.action);
+            });
+        });
+        
         // Hide the main input section for cleaner UX during conversation
         const mainInputSection = document.querySelector('.main-input-section');
         if (mainInputSection) {
             mainInputSection.style.display = 'none';
         }
     }
+    
+    handleContextualButton(action) {
+        // Handle contextual button actions
+        switch(action) {
+            case 'continue':
+                this.setConversationMode('stepping');
+                this.revealFirstStepOnly();
+                break;
+            case 'shrink':
+                this.setConversationMode('shrinking');
+                // Generate one tiny step
+                this.generateTinyStep();
+                break;
+            case 'make-smaller':
+                // Break down current step further
+                const currentStepDiv = document.querySelector('.advice-card.step-current');
+                if (currentStepDiv) {
+                    const stepTitle = currentStepDiv.querySelector('.advice-title')?.textContent || '';
+                    const step = { title: stepTitle };
+                    this.handleStepFeedback('make-smaller', currentStepDiv, step);
+                }
+                break;
+            case 'talk-more':
+                this.setConversationMode('clarifying');
+                this.askClarifyingQuestion();
+                break;
+            case 'pause':
+                this.pauseAndSave();
+                break;
+        }
+    }
+    
+    generateTinyStep() {
+        // Generate one tiny, minimal step
+        const responseContent = document.getElementById('responseContent');
+        const tinyStepDiv = document.createElement('div');
+        tinyStepDiv.className = 'advice-card step-current';
+        tinyStepDiv.innerHTML = `
+            <h4 class="advice-title">One Tiny Thing</h4>
+            <p class="advice-text">What's the smallest, easiest part you could do right now? Just one thing.</p>
+            <div class="advice-input-area">
+                <textarea 
+                    class="advice-step-input"
+                    placeholder="What's one tiny thing you could do?"
+                    rows="2"
+                ></textarea>
+                <button class="advice-start-btn primary-btn">Start this step</button>
+            </div>
+        `;
+        
+        responseContent.appendChild(tinyStepDiv);
+        
+        const inputField = tinyStepDiv.querySelector('.advice-step-input');
+        const startBtn = tinyStepDiv.querySelector('.advice-start-btn');
+        
+        startBtn.addEventListener('click', () => {
+            const answer = inputField.value.trim();
+            if (answer) {
+                this.setConversationMode('stepping');
+                this.revealFirstStepOnly();
+            }
+        });
+        
+        setTimeout(() => inputField.focus(), 100);
+    }
+    
+    askClarifyingQuestion() {
+        // Ask a clarifying question based on context
+        const responseContent = document.getElementById('responseContent');
+        const lastInput = this.lastUserInput || '';
+        
+        let question;
+        const lowerInput = lastInput.toLowerCase();
+        
+        if (lowerInput.includes('explain') || lowerInput.includes('how')) {
+            question = "What part feels confusing?";
+        } else if (lowerInput.includes('stuck') || lowerInput.includes('can\'t')) {
+            question = "What's getting in the way?";
+        } else {
+            question = "Tell me more about that.";
+        }
+        
+        const questionDiv = document.createElement('div');
+        questionDiv.className = 'frank-response';
+        questionDiv.innerHTML = `<p class="clarifying-question">${question}</p>`;
+        responseContent.appendChild(questionDiv);
+        
+        // Add input for answer
+        const inputArea = document.createElement('div');
+        inputArea.className = 'question-input-area';
+        inputArea.innerHTML = `
+            <textarea 
+                id="questionAnswerInput" 
+                class="question-answer-input"
+                placeholder="Type your answer here..."
+                rows="3"
+            ></textarea>
+            <button id="questionSubmitBtn" class="question-submit-btn">Respond</button>
+        `;
+        responseContent.appendChild(inputArea);
+        
+        const questionInput = document.getElementById('questionAnswerInput');
+        const questionSubmitBtn = document.getElementById('questionSubmitBtn');
+        
+        questionSubmitBtn.addEventListener('click', () => {
+            const answer = questionInput.value.trim();
+            if (answer) {
+                this.lastUserInput = answer;
+                this.handleAnswer(answer);
+            }
+        });
+        
+        setTimeout(() => questionInput.focus(), 100);
+    }
 
     handleAnswer(answer) {
-        // Modal Screen 2: After user responds to first question
+        // After user responds to first question
         if (!this.conversationState || !this.conversationState.waitingForAnswer) {
             return;
         }
@@ -683,10 +1713,11 @@ class AssignmentHelper {
             return;
         }
 
-        // Store the answer
+        // Store the answer and update last input
         this.conversationState.answers.push(answer);
+        this.lastUserInput = answer;
         
-        const responseContent = document.getElementById('responseContentModal');
+        const responseContent = document.getElementById('responseContent');
         
         // Remove the input area from current question and show the answer
         const currentQuestion = responseContent.querySelector('.conversation-question');
@@ -703,23 +1734,171 @@ class AssignmentHelper {
             currentQuestion.appendChild(answerDiv);
         }
         
-        // Modal Screen 2: EXACT COPY
-        // "Thanks. Let's make this smaller."
-        // Then generate first step only (no full breakdown)
-        const thanksDiv = document.createElement('div');
-        thanksDiv.className = 'frank-response';
-        thanksDiv.innerHTML = `<p>Thanks. Let's make this smaller.</p>`;
-        responseContent.appendChild(thanksDiv);
+        // Check input type to determine next step
+        const inputType = this.detectInputType(answer);
+        const mode = this.conversationMode;
         
-        // Generate breakdown but only show first step
-        setTimeout(() => {
-            this.revealFirstStepOnly();
-        }, 1000);
+        // If still emotional/opinion-based, stay in clarifying mode
+        if (inputType === 'emotional' && (mode === 'listening' || mode === 'clarifying')) {
+            // Use paraphrase mirror instead of "Thanks"
+            const mirror = this.createParaphraseMirror(answer);
+            
+            // Generate clarifying question based on answer
+            const lowerAnswer = answer.toLowerCase();
+            let nextQuestion;
+            
+            if (lowerAnswer.includes("doesn't connect") || lowerAnswer.includes("doesnt connect") || 
+                lowerAnswer.includes("pointless") || lowerAnswer.includes("irrelevant")) {
+                nextQuestion = "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
+            } else if (lowerAnswer.includes("boring") || lowerAnswer.includes("dull")) {
+                nextQuestion = "What would need to change for it to feel more engaging?";
+            } else if (lowerAnswer.includes("hard") || lowerAnswer.includes("difficult") || lowerAnswer.includes("confusing")) {
+                nextQuestion = "What part feels the most confusing or overwhelming?";
+            } else {
+                nextQuestion = "Tell me more about that.";
+            }
+            
+            const responseDiv = document.createElement('div');
+            responseDiv.className = 'frank-response';
+            responseDiv.innerHTML = `<p>${mirror}</p><p class="clarifying-question">${nextQuestion}</p>`;
+            responseContent.appendChild(responseDiv);
+            
+            // Add contextual buttons for clarification
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'contextual-buttons';
+            
+            // Generate contextual buttons based on the question
+            if (nextQuestion.includes("doesn't connect") || nextQuestion.includes("doesnt connect")) {
+                buttonsDiv.innerHTML = `
+                    <button class="contextual-btn" data-choice="pointless">It feels pointless</button>
+                    <button class="contextual-btn" data-choice="doesnt-matter">I don't get why it matters</button>
+                    <button class="contextual-btn" data-choice="something-else">Something else</button>
+                `;
+            }
+            
+            if (buttonsDiv.innerHTML) {
+                responseContent.appendChild(buttonsDiv);
+                
+                // Set up button handlers
+                buttonsDiv.querySelectorAll('.contextual-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const choice = btn.dataset.choice;
+                        this.handleClarificationChoice(choice);
+                    });
+                });
+            }
+            
+            // Add input for next answer
+            const nextInputArea = document.createElement('div');
+            nextInputArea.className = 'question-input-area';
+            nextInputArea.innerHTML = `
+                <textarea 
+                    id="questionAnswerInput" 
+                    class="question-answer-input"
+                    placeholder="Type your answer here..."
+                    rows="3"
+                ></textarea>
+                <button id="questionSubmitBtn" class="question-submit-btn">Respond</button>
+            `;
+            responseContent.appendChild(nextInputArea);
+            
+            const questionInput = document.getElementById('questionAnswerInput');
+            const questionSubmitBtn = document.getElementById('questionSubmitBtn');
+            
+            questionSubmitBtn.addEventListener('click', () => {
+                const nextAnswer = questionInput.value.trim();
+                if (nextAnswer) {
+                    this.handleAnswer(nextAnswer);
+                }
+            });
+            
+            questionInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.ctrlKey) {
+                    const nextAnswer = questionInput.value.trim();
+                    if (nextAnswer) {
+                        this.handleAnswer(nextAnswer);
+                    }
+                }
+            });
+            
+            setTimeout(() => questionInput.focus(), 100);
+            
+            // Update mode to clarifying
+            this.setConversationMode('clarifying');
+            return;
+        }
+        
+        // After clarification, transition to shrinking/stepping mode
+        // Use paraphrase mirror, then offer action (but only after clarification)
+        const mirror = this.createParaphraseMirror(answer);
+        
+        // Check if user explicitly signals overwhelm - only then show regulation
+        const showsOverwhelm = this.detectsOverwhelmSignal(answer);
+        let regulationText = '';
+        if (showsOverwhelm) {
+            // Only show regulation when user explicitly signals overwhelm
+            regulationText = '<p class="regulation-suggestion">Take a breath. You can pause whenever you need to.</p>';
+        }
+        
+        const responseDiv = document.createElement('div');
+        responseDiv.className = 'frank-response';
+        responseDiv.innerHTML = `<p>${mirror}</p>${regulationText}`;
+        responseContent.appendChild(responseDiv);
+        
+        // Now offer action buttons (only after clarification)
+        this.setConversationMode('shrinking');
+        
+        // Generate contextual buttons
+        const buttons = this.generateContextualButtons('shrinking', answer);
+        if (buttons.length > 0) {
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'contextual-buttons';
+            buttons.forEach(btn => {
+                const btnEl = document.createElement('button');
+                btnEl.className = 'contextual-btn';
+                btnEl.textContent = btn.text;
+                btnEl.dataset.action = btn.action;
+                btnEl.addEventListener('click', () => this.handleContextualButton(btn.action));
+                buttonsDiv.appendChild(btnEl);
+            });
+            responseContent.appendChild(buttonsDiv);
+        }
+    }
+    
+    handleClarificationChoice(choice) {
+        // Handle user's choice from clarification buttons
+        this.conversationState.answers.push(choice);
+        this.lastUserInput = choice;
+        
+        // Transition to shrinking mode after clarification
+        this.setConversationMode('shrinking');
+        
+        // Show action options
+        const responseContent = document.getElementById('responseContent');
+        const actionDiv = document.createElement('div');
+        actionDiv.className = 'frank-response';
+        actionDiv.innerHTML = '<p>Want to keep going, or should we make this into one tiny step?</p>';
+        responseContent.appendChild(actionDiv);
+        
+        // Add action buttons
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'contextual-buttons';
+        buttonsDiv.innerHTML = `
+            <button class="contextual-btn" data-action="continue">Want to keep going</button>
+            <button class="contextual-btn" data-action="shrink">Make this into one tiny step</button>
+        `;
+        responseContent.appendChild(buttonsDiv);
+        
+        buttonsDiv.querySelectorAll('.contextual-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.handleContextualButton(btn.dataset.action);
+            });
+        });
     }
 
     revealFirstStepOnly() {
-        // Modal Screen 3: Presenting first step only
-        const responseContent = document.getElementById('responseContentModal');
+        // Presenting first step only - no generic "Here's a good place to start"
+        const responseContent = document.getElementById('responseContent');
         const breakdown = this.generateBreakdown(this.conversationState.originalInput, 'resilience_help');
         
         // Store all steps but only show first 2 (first clearly, second faint preview)
@@ -727,13 +1906,10 @@ class AssignmentHelper {
         this.conversationState.currentAdviceStep = 0;
         this.conversationState.adviceAnswers = [];
         
-        // Modal Screen 3: EXACT COPY
+        // No generic acknowledgements - just show the step
         const adviceDiv = document.createElement('div');
         adviceDiv.className = 'advice-reveal';
         adviceDiv.innerHTML = `
-            <div class="how-to-start">
-                <p>Here's a good place to start.</p>
-            </div>
             <div class="resilience-advice" id="resilienceAdviceContainer">
             </div>
         `;
@@ -746,7 +1922,7 @@ class AssignmentHelper {
 
     revealAdvice() {
         // This is called when continuing after first step
-        const responseContent = document.getElementById('responseContentModal');
+        const responseContent = document.getElementById('responseContent');
         const breakdown = this.generateBreakdown(this.conversationState.originalInput, 'resilience_help');
         
         this.conversationState.adviceSteps = breakdown.steps;
@@ -766,7 +1942,7 @@ class AssignmentHelper {
     }
 
     showFirstStepWithPreview() {
-        // Modal Screen 3: Show Step 1 (clearly) and Step 2 (faint preview)
+        // Show Step 1 (clearly) and Step 2 (faint preview)
         const container = document.getElementById('resilienceAdviceContainer');
         if (!container || !this.conversationState.adviceSteps) return;
         
@@ -779,11 +1955,42 @@ class AssignmentHelper {
         let step1HTML = `
             <h4 class="advice-title">${step1.title}</h4>
             <p class="advice-text">${step1.description}</p>
-            <div class="step-feedback-actions">
-                <button class="step-feedback-btn" data-action="make-smaller">Make this smaller</button>
-                <button class="step-feedback-btn" data-action="too-much">This is too much</button>
-            </div>
         `;
+        
+        // Only show feedback buttons if mode allows and user input suggests they're needed
+        const mode = this.conversationMode;
+        const lastInput = this.lastUserInput || '';
+        const shouldShowFeedback = mode === 'stepping' || mode === 'shrinking';
+        
+        // Only show "Take a breath" if user explicitly signals overwhelm
+        if (step1.title === "Take a Breath" && !this.detectsOverwhelmSignal(lastInput)) {
+            // Skip this step if no overwhelm signal
+            if (this.conversationState.adviceSteps.length > 1) {
+                this.conversationState.currentAdviceStep = 1;
+                this.showFirstStepWithPreview();
+                return;
+            }
+        }
+        
+        if (shouldShowFeedback) {
+            // Generate contextual buttons based on last input
+            const contextualButtons = this.generateContextualButtons(mode, lastInput);
+            if (contextualButtons.length > 0) {
+                step1HTML += '<div class="step-feedback-actions">';
+                contextualButtons.forEach(btn => {
+                    step1HTML += `<button class="step-feedback-btn" data-action="${btn.action}">${btn.text}</button>`;
+                });
+                step1HTML += '</div>';
+            } else {
+                // Default feedback buttons only if no contextual ones
+                step1HTML += `
+                    <div class="step-feedback-actions">
+                        <button class="step-feedback-btn" data-action="make-smaller">Make this smaller</button>
+                        <button class="step-feedback-btn" data-action="too-much">This is too much</button>
+                    </div>
+                `;
+            }
+        }
         
         if (step1.needsInput) {
             step1HTML += `
@@ -896,13 +2103,29 @@ class AssignmentHelper {
                 <p class="advice-text">${step.description}</p>
             `;
             
-            // Add feedback buttons (Feature Set 5)
-            stepHTML += `
-                <div class="step-feedback-actions">
-                    <button class="step-feedback-btn" data-action="make-smaller">Make this smaller</button>
-                    <button class="step-feedback-btn" data-action="too-much">This is too much</button>
-                </div>
-            `;
+            // Add contextual feedback buttons based on mode and last input
+            const mode = this.conversationMode;
+            const lastInput = this.lastUserInput || '';
+            const shouldShowFeedback = mode === 'stepping' || mode === 'shrinking';
+            
+            if (shouldShowFeedback) {
+                const contextualButtons = this.generateContextualButtons(mode, lastInput);
+                if (contextualButtons.length > 0) {
+                    stepHTML += '<div class="step-feedback-actions">';
+                    contextualButtons.forEach(btn => {
+                        stepHTML += `<button class="step-feedback-btn" data-action="${btn.action}">${btn.text}</button>`;
+                    });
+                    stepHTML += '</div>';
+                } else {
+                    // Default feedback buttons only if no contextual ones
+                    stepHTML += `
+                        <div class="step-feedback-actions">
+                            <button class="step-feedback-btn" data-action="make-smaller">Make this smaller</button>
+                            <button class="step-feedback-btn" data-action="too-much">This is too much</button>
+                        </div>
+                    `;
+                }
+            }
             
             // Add input field if this step needs input
             if (step.needsInput) {
@@ -1005,28 +2228,39 @@ class AssignmentHelper {
     }
 
     handleStepFeedback(action, stepDiv, step) {
-        // Feature Set 5: Feedback Loop - Empathetic response first, then adapt
+        // Feedback Loop - Use paraphrase mirror, then adapt
         if (action === 'too-much') {
-            // Show empathetic response
+            // Use user's language instead of "Thanks"
+            const lastInput = this.lastUserInput || '';
+            const mirror = lastInput ? this.createParaphraseMirror(lastInput) : "I hear you.";
+            
             const feedbackMsg = document.createElement('div');
             feedbackMsg.className = 'step-feedback-message';
-            feedbackMsg.innerHTML = `
-                <p>Thanks for saying that. Let's make it easier.</p>
-            `;
-            stepDiv.insertBefore(feedbackMsg, stepDiv.querySelector('.advice-input-area'));
+            feedbackMsg.innerHTML = `<p>${mirror} Let's make it easier.</p>`;
+            
+            const inputArea = stepDiv.querySelector('.advice-input-area');
+            if (inputArea) {
+                stepDiv.insertBefore(feedbackMsg, inputArea);
+            } else {
+                stepDiv.appendChild(feedbackMsg);
+            }
             
             // Adapt: Break down or offer alternative
             setTimeout(() => {
                 this.adaptStepForFeedback(stepDiv, step, action);
             }, 1000);
         } else if (action === 'make-smaller') {
-            // Break the step down further
+            // Break the step down further - no generic "Let's break this"
             const feedbackMsg = document.createElement('div');
             feedbackMsg.className = 'step-feedback-message';
-            feedbackMsg.innerHTML = `
-                <p>Let's break this into even smaller pieces.</p>
-            `;
-            stepDiv.insertBefore(feedbackMsg, stepDiv.querySelector('.advice-input-area'));
+            feedbackMsg.innerHTML = `<p>Let's break this into even smaller pieces.</p>`;
+            
+            const inputArea = stepDiv.querySelector('.advice-input-area');
+            if (inputArea) {
+                stepDiv.insertBefore(feedbackMsg, inputArea);
+            } else {
+                stepDiv.appendChild(feedbackMsg);
+            }
             
             setTimeout(() => {
                 this.adaptStepForFeedback(stepDiv, step, action);
@@ -1060,8 +2294,8 @@ class AssignmentHelper {
         currentStepDiv.classList.remove('step-current');
         currentStepDiv.classList.add('step-complete');
         
-        // Show celebratory microcopy (quiet pride, no fanfare)
-        const celebrations = ["Nice work.", "That mattered.", "One step done."];
+        // Show quiet acknowledgment (no generic praise)
+        const celebrations = ["One step done.", "That mattered."];
         const celebration = celebrations[Math.floor(Math.random() * celebrations.length)];
         this.showStepCelebration(currentStepDiv, celebration);
         
@@ -1099,9 +2333,9 @@ class AssignmentHelper {
         });
         
         nudgeDiv.querySelector('.nudge-not-now').addEventListener('click', () => {
-            // EXACT COPY: "That's okay. You can come back whenever you're ready."
+            // Permission-based statement instead of generic "That's okay"
             nudgeDiv.innerHTML = `
-                <p class="nudge-response">That's okay. You can come back whenever you're ready.</p>
+                <p class="nudge-response">You can come back whenever you're ready.</p>
             `;
             // Then stops talking - save and close
             setTimeout(() => {
@@ -1112,6 +2346,7 @@ class AssignmentHelper {
     }
 
     showStepCelebration(stepDiv, message) {
+        // Remove generic praise - use quiet acknowledgment only
         const celebrationDiv = document.createElement('div');
         celebrationDiv.className = 'step-celebration';
         celebrationDiv.textContent = message;
@@ -1147,7 +2382,7 @@ class AssignmentHelper {
 
     displayResponse(breakdown, type = 'general') {
         const responseHeader = document.getElementById('responseHeader');
-        const responseContent = document.getElementById('responseContentModal');
+        const responseContent = document.getElementById('responseContent');
         
         // Open modal instead of showing inline
         this.openModal();
@@ -1238,6 +2473,12 @@ class AssignmentHelper {
     }
 
     showNiceStart() {
+        // Only show "Nice start" for assignment types, not emotional/resilience help
+        const mode = this.conversationMode;
+        if (mode === 'listening' || mode === 'clarifying') {
+            return; // Don't show generic praise in listening/clarifying modes
+        }
+        
         const niceStartMsg = document.getElementById('niceStartMessage');
         if (niceStartMsg) {
             niceStartMsg.classList.remove('hidden');

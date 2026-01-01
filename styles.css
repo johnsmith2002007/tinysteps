@@ -944,6 +944,45 @@ body::before {
 }
 
 /* Step Feedback Actions (Feature Set 5) */
+.contextual-buttons {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+.contextual-btn {
+    padding: 0.6rem 1.2rem;
+    background: rgba(0, 255, 255, 0.1);
+    border: 1px solid var(--accent-cyan);
+    color: var(--accent-cyan);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.contextual-btn:hover {
+    background: rgba(0, 255, 255, 0.2);
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
+    transform: translateY(-2px);
+}
+
+.clarifying-question {
+    font-size: 1.1rem;
+    line-height: 1.8;
+    margin-top: 0.5rem;
+    color: var(--text-primary);
+}
+
+.regulation-suggestion {
+    font-size: 1rem;
+    color: var(--accent-green);
+    margin-top: 0.75rem;
+    font-style: italic;
+}
+
 .step-feedback-actions {
     display: flex;
     gap: 1rem;
