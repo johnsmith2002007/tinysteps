@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frank - Your Friendly Task Breakdown Buddy</title>
+    <link rel="stylesheet" href="styles.css?v=32">
+</head>
+<body>
+    <div class="container">
+        <main>
+            <div class="section-headline">
+                <h1>Frank: Breaking Down Big Things into Small Steps</h1>
+            </div>
+            
+            <div class="main-content-wrapper">
+                <div class="input-section main-input-section">
+                    <textarea 
+                        id="assignmentInput" 
+                        placeholder="Messy is fine, add your assignment or random thoughts here"
+                        rows="6"
+                    ></textarea>
+                    <button id="submitBtn" class="primary-btn">Help me get started</button>
+                </div>
+            </div>
+
+            <!-- Modal Overlay -->
+            <div id="responseModal" class="modal-overlay hidden">
+                <div class="modal-backdrop" onclick="app.closeModal()"></div>
+                <div class="modal-container">
+                    <div class="modal-header">
+                        <div id="responseHeader" class="response-header">
+                            <h2>Your Personalized Guide</h2>
+                            <div class="header-buttons">
+                                <button id="pauseBtn" class="pause-btn">I need a break, save this and I'll be back later</button>
+                            </div>
+                        </div>
+                        <button class="modal-close" onclick="app.closeModal()" aria-label="Close modal">×</button>
+                    </div>
+                    <div id="responseContent" class="modal-content"></div>
+                    <div id="niceStartMessage" class="microcopy-message hidden">Nice start.</div>
+                </div>
+            </div>
+
+            <div class="bottom-sections-wrapper">
+                <div class="overview-section">
+                    <h2>You don't have to do everything.</h2>
+                    <p>You can stop anytime.<br>You can save things for later.<br>Starting counts.</p>
+                </div>
+
+                <div id="permissionCard" class="permission-card bottom-right-card">
+                    <button class="close-permission" onclick="app.dismissPermissionCard()" aria-label="Close">×</button>
+                    <h2>You don't need the right words.</h2>
+                    <p>You can paste the whole assignment.<br>Or just say what you're stuck on.<br>Frank will help either way.</p>
+                </div>
+            </div>
+
+            <div id="funFactSection" class="fun-fact-section">
+                <h2>🐾 Fun Fact of the Hour</h2>
+                <div id="funFactContent" class="fun-fact-content">
+                    <p class="fun-fact-text">Loading an amazing animal fact...</p>
+                    <p class="fun-fact-source">Source: National Geographic Kids</p>
+                </div>
+            </div>
+
+            <div id="savedAssignments" class="saved-section">
+                <h2>Saved Assignments</h2>
+                <div id="savedList" class="saved-list"></div>
+            </div>
+
+            <div id="socialTipsSection" class="social-tips-section">
+                <h2>Fun Tips for Interacting with Others 💬</h2>
+                <div class="tips-content">
+                    <div class="tip-card">
+                        <h3>🎯 The Listening Superpower</h3>
+                        <p>When someone's talking, try this: stop what you're doing and really listen. It's like being a detective - you're gathering clues about what they're saying. People love when you actually hear them, and it makes conversations way easier!</p>
+                    </div>
+                    <div class="tip-card">
+                        <h3>⏸️ The Pause Button</h3>
+                        <p>Feeling overwhelmed in a conversation? It's totally okay to take a break! Say something like "Can I think about that for a second?" or "I need a moment to process." Most people will totally understand - and if they don't, that's on them, not you.</p>
+                    </div>
+                    <div class="tip-card">
+                        <h3>🤝 The Give-and-Take Rule</h3>
+                        <p>Conversations are like a game of catch - you throw the ball, they throw it back. Try asking a question after you share something. It keeps the conversation flowing and shows you're interested in them too!</p>
+                    </div>
+                    <div class="tip-card">
+                        <h3>😊 The "No" Acceptance Challenge</h3>
+                        <p>When someone says "no," it can feel like a rejection. But here's the thing: "no" isn't about you being wrong or bad. It's just information. Practice saying "Okay, thanks for letting me know" - it's like a superpower that makes everything easier.</p>
+                    </div>
+                    <div class="tip-card">
+                        <h3>🎬 Create Your Own Social Story</h3>
+                        <p>Before a situation that makes you nervous, write or think through what might happen. Like a movie script! "First I'll walk in, then I'll say hi, then..." Having a plan (even a loose one) makes everything feel less scary.</p>
+                    </div>
+                    <div class="tip-card">
+                        <h3>💨 The Breathing Reset</h3>
+                        <p>When things get intense, your breath is your best friend. Try this: breathe in for 4 counts, hold for 4, breathe out for 4. It's like hitting the reset button on your brain. Works anywhere, anytime!</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="funSection" class="fun-section">
+                <h2>Let's have some fun 🎉</h2>
+                <div class="meme-generator">
+                    <div class="meme-controls">
+                        <label for="memeTemplate">Choose a template:</label>
+                        <select id="memeTemplate" class="meme-select">
+                            <option value="">Loading SpongeBob memes...</option>
+                        </select>
+                    </div>
+                    <div id="memeCanvasContainer" class="meme-canvas-container hidden">
+                        <canvas id="memeCanvas"></canvas>
+                        <div class="meme-text-inputs">
+                            <input type="text" id="memeTopText" placeholder="Top text..." class="meme-text-input">
+                            <input type="text" id="memeBottomText" placeholder="Bottom text..." class="meme-text-input">
+                        </div>
+                        <div class="meme-actions">
+                            <button id="generateMemeBtn" class="primary-btn">Generate Meme</button>
+                            <button id="downloadMemeBtn" class="secondary-btn">Download</button>
+                            <button id="newMemeBtn" class="secondary-btn">New Meme</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js?v=17"></script>
+    <script src="meme-generator.js"></script>
+</body>
+</html>
+
