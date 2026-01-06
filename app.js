@@ -2281,7 +2281,7 @@ class AssignmentHelper {
             // Permission-based statement, no generic "That's okay", no multi-directional guidance
             return {
                 title: "Let's Start Here",
-                content: `You're dealing with something difficult right now. We don't have to fix this yet.`
+                content: `You're dealing with something difficult right now.`
             };
         } else if (type === 'compare_contrast') {
             // Metacognitive: Planning phase - help user set goals and select strategies
