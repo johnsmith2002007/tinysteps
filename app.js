@@ -596,17 +596,28 @@ class AssignmentHelper {
     
     // Display response from canonical flow
     displayCanonicalResponse(response, originalInput) {
+        console.log('displayCanonicalResponse called with:', response);
+        
+        if (!response) {
+            console.error('No response provided to displayCanonicalResponse');
+            throw new Error('No response provided');
+        }
+        
         const responseContent = document.getElementById('responseContent');
         const responseHeader = document.getElementById('responseHeader');
         
         if (!responseContent) {
             console.error('responseContent element not found');
-            alert('Error: Could not find response container. Please refresh the page.');
-            return;
+            throw new Error('Could not find response container element');
         }
         
         // Open modal
-        this.openModal();
+        try {
+            this.openModal();
+        } catch (error) {
+            console.error('Error opening modal:', error);
+            throw error;
+        }
         
         // Hide/show sections based on mode
         if (response.mode === MODES.LISTENING || response.mode === MODES.CLARIFYING || 
