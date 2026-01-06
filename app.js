@@ -153,6 +153,11 @@ class AssignmentHelper {
         const signal = this.classifyInput(userInput);
         this.lastUserInput = userInput;
         
+        // Initialize conversationContext if it doesn't exist
+        if (!this.conversationContext) {
+            this.conversationContext = [];
+        }
+        
         // Add to conversation context
         this.conversationContext.push({
             input: userInput,
