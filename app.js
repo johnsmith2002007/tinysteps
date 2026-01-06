@@ -281,70 +281,81 @@ class AssignmentHelper {
         return "I hear you.";
     }
     
-    // Ask one clarifying question based on input
+    // Ask one clarifying question based on input (metacognitive approach)
+    // Helps users develop declarative knowledge (knowing what they're struggling with)
     askOneClarifyingQuestion(userInput) {
         const lowerInput = userInput.toLowerCase();
         
         if (lowerInput.includes('hate')) {
+            // Metacognitive: Help identify what specifically is causing difficulty
             return "What about it feels the worst right now?";
         }
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            // Metacognitive: Help understand their own learning needs (conditional knowledge)
             return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
         }
         
         if (lowerInput.includes('boring') || lowerInput.includes('pointless')) {
+            // Metacognitive: Help identify what would make learning meaningful
             return "What's missing that would make it feel meaningful?";
         }
         
         if (lowerInput.includes('difficult') || lowerInput.includes('hard')) {
+            // Metacognitive: Help identify specific cognitive challenges
             return "What part feels the hardest?";
         }
         
         if (lowerInput.includes('overwhelmed') || lowerInput.includes('too much')) {
+            // Metacognitive: Help monitor their cognitive load
             return "What feels like too much?";
         }
         
-        // Default clarifying question
+        // Default clarifying question - metacognitive prompt
         return "What's bothering you about this?";
     }
     
-    // Reflect meaning of explanatory input
+    // Reflect meaning of explanatory input (metacognitive awareness)
+    // Helps users understand their own cognitive processes
     reflectMeaning(userInput) {
         const lowerInput = userInput.toLowerCase();
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            // Metacognitive: Acknowledge the impact on learning motivation
             return "If something feels pointless, it's way harder to care.";
         }
         
         if (lowerInput.includes("doesn't connect") || lowerInput.includes("doesnt connect")) {
+            // Metacognitive: Help understand why connection matters for learning
             return "When something doesn't connect to your life, it's hard to see why it matters.";
         }
         
         if (lowerInput.includes("because")) {
-            // Extract the reason and reflect it
+            // Metacognitive: Validate their self-awareness about their thinking
             return "I hear what you're saying.";
         }
         
-        // Default reflection
+        // Default reflection - metacognitive acknowledgment
         return "That makes sense.";
     }
     
-    // Narrow choices for explanatory input
+    // Narrow choices for explanatory input (metacognitive: help user understand their own learning needs)
     narrowChoices(userInput) {
         const lowerInput = userInput.toLowerCase();
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant") ||
             lowerInput.includes("doesn't connect") || lowerInput.includes("doesnt connect")) {
-            return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
+            // Metacognitive: Help user identify what they need for learning (conditional knowledge)
+            return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it? Understanding what's blocking you helps you figure out what approach might work better.";
         }
         
         if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
-            return "What would need to change for it to feel more engaging?";
+            // Metacognitive: Help user identify what would make learning meaningful
+            return "What would need to change for it to feel more engaging? Knowing what would help you engage is useful information for how to approach this.";
         }
         
-        // Default narrowing question
-        return "Tell me more about that.";
+        // Default narrowing question - metacognitive prompt
+        return "Tell me more about that. The more you understand what's happening for you, the easier it is to find what works.";
     }
     
     // Gentle reassurance for overwhelmed state (only used when user explicitly signals overwhelm)
@@ -1227,20 +1238,22 @@ class AssignmentHelper {
                 content: `You're dealing with something difficult right now. We don't have to fix this yet.`
             };
         } else if (type === 'compare_contrast') {
-            // Remove premature regulation ("take a deep breath"), keep only actionable guidance
+            // Metacognitive: Planning phase - help user set goals and select strategies
             return {
                 title: "How to Get Started",
-                content: `Start by identifying ONE theme from the book that really stood out to you. Then, think about where you've seen something similar in the news, social media, or your own life. That connection is your starting point - everything else builds from there.`
+                content: `Before you start, take a moment to think: What's your goal here? Start by identifying ONE theme from the book that really stood out to you. Then, think about where you've seen something similar in the news, social media, or your own life. That connection is your starting point - everything else builds from there.`
             };
         } else if (type === 'essay') {
+            // Metacognitive: Planning - break down the cognitive task
             return {
                 title: "How to Get Started",
                 content: `Don't try to write the whole paper in your head first! Start by just writing down three things you want to say - they don't have to be perfect, they don't even have to be in order. Just get your thoughts on paper. Once you see them written down, your brain will start connecting the dots.`
             };
         } else {
+            // Metacognitive: Planning - identify the easiest cognitive task first
             return {
                 title: "How to Get Started",
-                content: `Break the ice by doing the easiest part first. What's the smallest, simplest thing you can do right now? Do that. It gets your brain moving and makes the rest feel less scary.`
+                content: `Before diving in, think: What's the smallest, simplest thing you can do right now? Start with that. It gets your brain moving and helps you see what comes next.`
             };
         }
     }
@@ -1272,21 +1285,21 @@ class AssignmentHelper {
         steps.push(
             {
                 title: "Name What's Happening",
-                description: "What's going on for you right now?",
+                description: "What's going on for you right now? Being aware of what you're thinking and feeling is the first step to understanding how to work with it.",
                 needsInput: true,
                 inputPrompt: "What's on your mind?",
                 inputPlaceholder: "Share what's happening - whatever comes to mind..."
             },
             {
                 title: "What Can You Control?",
-                description: "What can you actually control here? What can't you control?",
+                description: "What can you actually control here? What can't you control? Understanding what's in your control helps you focus your energy where it actually matters.",
                 needsInput: true,
                 inputPrompt: "What's in your control vs. what's not?",
                 inputPlaceholder: "List what you can control and what you can't..."
             },
             {
                 title: "One Small Action",
-                description: "What's one tiny thing you could do right now?",
+                description: "What's one tiny thing you could do right now? Think about what action would actually help in this situation - not what you 'should' do, but what would actually work.",
                 needsInput: true,
                 inputPrompt: "What's one small action you could take?",
                 inputPlaceholder: "Type one small thing you could do..."
@@ -1300,7 +1313,7 @@ class AssignmentHelper {
             },
             {
                 title: "Remember It's Temporary",
-                description: "This feeling won't last forever. You've gotten through hard things before.",
+                description: "This feeling won't last forever. You've gotten through hard things before. Think about what helped you get through difficult times in the past - that's information about what strategies work for you.",
                 needsInput: false
             }
         );
@@ -1315,31 +1328,34 @@ class AssignmentHelper {
         return [
             {
                 title: "Identify the Themes (Like Finding the Main Characters)",
-                description: "Think of themes as the 'main characters' of the book's message. What big ideas kept showing up? For example, if you read about someone fighting for education, that's a theme. Write down 2-3 themes that really stuck with you - don't overthink it, just what felt important.",
+                description: "Think of themes as the 'main characters' of the book's message. What big ideas kept showing up? For example, if you read about someone fighting for education, that's a theme. Write down 2-3 themes that really stuck with you - don't overthink it, just what felt important. As you work, notice: Are you understanding the themes, or just guessing? If you're not sure, that's information - it tells you what to focus on.",
                 checklist: [
                     "List 2-3 main themes from the book",
                     "For each theme, write one sentence about why it matters",
-                    "Pick the theme that interests you most"
+                    "Pick the theme that interests you most",
+                    "Check: Do you actually understand this theme, or are you guessing? (This helps you know what to focus on)"
                 ],
                 analogy: "It's like picking your favorite song from an album - you don't need to analyze every song, just the ones that hit you."
             },
             {
                 title: "Find Current Connections (The 'Wait, This Sounds Familiar' Step)",
-                description: "Now, where have you seen something similar happening? This doesn't have to be a perfect match - think about the CORE idea. If the book talks about fighting for rights, where do you see people fighting for rights today? News articles, social movements, even school policies can work!",
+                description: "Now, where have you seen something similar happening? This doesn't have to be a perfect match - think about the CORE idea. If the book talks about fighting for rights, where do you see people fighting for rights today? News articles, social movements, even school policies can work! While you're looking, pay attention: Are you finding real connections, or forcing them? If connections feel forced, that's a signal to look for a different angle or a different current event.",
                 checklist: [
                     "Brainstorm 3-5 current events or situations that relate to your chosen theme",
                     "For each one, write one sentence about the connection",
-                    "Choose 2-3 that have the strongest connections"
+                    "Choose 2-3 that have the strongest connections",
+                    "Ask yourself: Do these connections feel real, or am I forcing them? (If forced, try a different angle)"
                 ],
                 analogy: "Like when you hear a new song and think 'this reminds me of that other song' - you're finding the musical connection. Same idea, but with themes!"
             },
             {
                 title: "Create Your Comparison Framework (The Organizing Step)",
-                description: "This is where you decide HOW you'll compare. Will you talk about similarities first, then differences? Or will you go theme by theme? Create a simple structure: 'I'll compare X from the book to Y happening now, focusing on how they're similar in [way] but different in [way].'",
+                description: "This is where you decide HOW you'll compare. Will you talk about similarities first, then differences? Or will you go theme by theme? Create a simple structure: 'I'll compare X from the book to Y happening now, focusing on how they're similar in [way] but different in [way].' Think about which structure makes more sense for your specific comparison - there's no one right way, just what works for your ideas.",
                 checklist: [
                     "Decide on your comparison structure (similarities vs differences, or theme-by-theme)",
                     "Write a simple sentence: 'I'm comparing [theme] to [current event]'",
-                    "List 2-3 specific points of comparison"
+                    "List 2-3 specific points of comparison",
+                    "Ask: Does this structure make sense for what I'm comparing? (If not, try the other approach)"
                 ],
                 analogy: "It's like planning a road trip - you need to know your starting point, destination, and a few stops along the way. You don't need the whole map, just the main route."
             },
@@ -1367,13 +1383,14 @@ class AssignmentHelper {
             },
             {
                 title: "Revise and Polish (The 'Make It Shine' Step)",
-                description: "Now that you have your ideas down, make them clearer. Read through and ask: 'Does this make sense? Can someone else understand my point?' Add transitions between paragraphs, fix any confusing parts, and make sure your examples really support your main idea.",
+                description: "Now that you have your ideas down, make them clearer. Read through and ask: 'Does this make sense? Can someone else understand my point?' Add transitions between paragraphs, fix any confusing parts, and make sure your examples really support your main idea. After revising, ask yourself: Did this strategy work? What would I do differently next time? This helps you learn what works for you.",
                 checklist: [
                     "Read through your draft once for clarity",
                     "Add transition sentences between paragraphs",
                     "Check that each paragraph has a clear point",
                     "Fix any spelling or grammar mistakes",
-                    "Read it one more time out loud to catch awkward phrases"
+                    "Read it one more time out loud to catch awkward phrases",
+                    "Reflect: What worked well in this process? What would I change next time?"
                 ],
                 analogy: "Like editing a photo - the picture is already there, you're just making the colors pop and cropping out the blurry parts."
             }
@@ -1384,48 +1401,53 @@ class AssignmentHelper {
         return [
             {
                 title: "Understand What You're Being Asked",
-                description: "Read the assignment carefully and identify the key question or prompt. What is the main thing you need to answer or explain?",
+                description: "Read the assignment carefully and identify the key question or prompt. What is the main thing you need to answer or explain? Before you start, check: Do you actually understand what's being asked, or are you guessing? If you're not sure, that's valuable information - it tells you what to clarify first.",
                 checklist: [
                     "Highlight the main question in the assignment",
                     "Identify any key words (analyze, explain, argue, etc.)",
-                    "Write in your own words what you think you need to do"
+                    "Write in your own words what you think you need to do",
+                    "Check: Do I actually understand this, or am I guessing? (If guessing, ask for clarification)"
                 ]
             },
             {
                 title: "Brainstorm Your Ideas",
-                description: "Don't worry about organization yet - just get your thoughts down. What do you know about this topic? What do you think?",
+                description: "Don't worry about organization yet - just get your thoughts down. What do you know about this topic? What do you think? As you brainstorm, notice: Are ideas coming easily, or are you stuck? If stuck, that's information - it might mean you need to learn more about the topic first, or approach it from a different angle.",
                 checklist: [
                     "Write down everything you know about the topic",
                     "List any questions you have",
-                    "Note any ideas that pop into your head"
+                    "Note any ideas that pop into your head",
+                    "Notice: Are ideas flowing, or am I stuck? (If stuck, try a different approach)"
                 ]
             },
             {
                 title: "Create an Outline",
-                description: "Organize your ideas into a simple structure: introduction, main points, conclusion.",
+                description: "Organize your ideas into a simple structure: introduction, main points, conclusion. This is your plan - think about what order makes the most sense for your ideas. Does this structure work for what you want to say? If it feels forced, try a different organization.",
                 checklist: [
                     "Write your main argument or thesis",
                     "List 3-5 main points you want to make",
-                    "Decide the order that makes the most sense"
+                    "Decide the order that makes the most sense",
+                    "Check: Does this structure work, or does it feel forced? (If forced, try reorganizing)"
                 ]
             },
             {
                 title: "Write Your First Draft",
-                description: "Start writing! Don't worry about perfection - just get your ideas down on paper.",
+                description: "Start writing! Don't worry about perfection - just get your ideas down on paper. As you write, pay attention: Is this flowing, or are you getting stuck? If you're stuck, that's a signal - maybe you need to go back and clarify your ideas, or try writing in a different order.",
                 checklist: [
                     "Write the introduction",
                     "Write each body paragraph",
-                    "Write the conclusion"
+                    "Write the conclusion",
+                    "Notice while writing: Is this flowing, or am I stuck? (If stuck, try a different approach)"
                 ]
             },
             {
                 title: "Revise and Edit",
-                description: "Read through your work and make it better. Check for clarity, flow, and correctness.",
+                description: "Read through your work and make it better. Check for clarity, flow, and correctness. After revising, think: What worked well in my process? What would I do differently next time? This reflection helps you become a better writer.",
                 checklist: [
                     "Read through once for content",
                     "Check for clear transitions",
                     "Fix grammar and spelling",
-                    "Make sure everything makes sense"
+                    "Make sure everything makes sense",
+                    "Reflect: What worked well? What would I change next time?"
                 ]
             }
         ];
@@ -1435,38 +1457,42 @@ class AssignmentHelper {
         return [
             {
                 title: "Break It Into Smaller Pieces",
-                description: "Look at your assignment and identify the main components. What are the different parts you need to complete?",
+                description: "Look at your assignment and identify the main components. What are the different parts you need to complete? Before you start, think: What's your plan here? Breaking things down helps you see what you're actually dealing with, which makes it less overwhelming.",
                 checklist: [
                     "List all the parts of the assignment",
                     "Put them in order of what needs to be done first",
-                    "Identify which parts seem easiest"
+                    "Identify which parts seem easiest",
+                    "Ask: Does this breakdown make sense? (If not, try a different way of organizing)"
                 ]
             },
             {
                 title: "Start With the Easiest Part",
-                description: "Begin with whatever feels most manageable. Getting started is often the hardest part!",
+                description: "Begin with whatever feels most manageable. Getting started is often the hardest part! As you work, notice: Is this strategy working? Are you making progress, or are you still stuck? If stuck, that's information - maybe you need a different starting point.",
                 checklist: [
                     "Pick the easiest or most interesting part",
                     "Set a timer for 15-20 minutes",
-                    "Work on just that one part"
+                    "Work on just that one part",
+                    "Check: Is this working, or am I still stuck? (If stuck, try a different part)"
                 ]
             },
             {
                 title: "Tackle the Rest One at a Time",
-                description: "Work through each part systematically. Don't try to do everything at once.",
+                description: "Work through each part systematically. Don't try to do everything at once. While you work, monitor your progress: Are you understanding what you're doing, or just going through the motions? If you're not understanding, that's a signal to slow down or ask for help.",
                 checklist: [
                     "Move to the next part",
                     "Complete it before moving on",
-                    "Take short breaks between parts"
+                    "Take short breaks between parts",
+                    "Monitor: Am I understanding this, or just going through motions? (If not understanding, slow down)"
                 ]
             },
             {
                 title: "Review and Complete",
-                description: "Check your work and make sure everything is done and makes sense.",
+                description: "Check your work and make sure everything is done and makes sense. After you're done, take a moment to reflect: What worked well in your process? What would you do differently next time? This helps you learn what strategies work for you.",
                 checklist: [
                     "Review each part",
                     "Make sure nothing is missing",
-                    "Double-check requirements"
+                    "Double-check requirements",
+                    "Reflect: What worked well? What would I change next time?"
                 ]
             }
         ];
@@ -2403,21 +2429,21 @@ class AssignmentHelper {
     }
 
     adaptStepForFeedback(stepDiv, step, action) {
-        // Adapt the step based on feedback
+        // Adapt the step based on feedback (metacognitive: help user recognize when strategies aren't working)
         if (action === 'too-much') {
             // Offer alternative phrasing or suggest pause
             const adaptDiv = document.createElement('div');
             adaptDiv.className = 'step-adaptation';
             adaptDiv.innerHTML = `
-                <p>Would it help to pause here, or would you like me to rephrase this step differently?</p>
+                <p>Would it help to pause here, or would you like me to rephrase this step differently? Recognizing when something feels like too much is actually useful information - it tells you what approach might work better.</p>
             `;
             stepDiv.appendChild(adaptDiv);
         } else if (action === 'make-smaller') {
-            // Break down further
+            // Break down further (metacognitive: help user understand when to adapt strategy)
             const adaptDiv = document.createElement('div');
             adaptDiv.className = 'step-adaptation';
             adaptDiv.innerHTML = `
-                <p>Let's focus on just one tiny part. What's the smallest piece you could tackle?</p>
+                <p>Let's focus on just one tiny part. What's the smallest piece you could tackle? Sometimes breaking things down further is the right strategy - you're adapting your approach based on what you're noticing.</p>
             `;
             stepDiv.appendChild(adaptDiv);
         }
@@ -2439,10 +2465,31 @@ class AssignmentHelper {
             document.body.classList.remove('celebration-pulse');
         }, 1000);
         
+        // Metacognitive prompt: Help user evaluate their strategy
+        setTimeout(() => {
+            this.addMetacognitiveReflection(currentStepDiv);
+        }, 1500);
+        
         // Ask "Want to keep going?" after celebration
         setTimeout(() => {
             this.askWantToKeepGoing(currentStepDiv);
         }, 2000);
+    }
+    
+    addMetacognitiveReflection(stepDiv) {
+        // Add a subtle metacognitive reflection prompt
+        const reflectionDiv = document.createElement('div');
+        reflectionDiv.className = 'metacognitive-prompt';
+        reflectionDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-top: 8px; font-style: italic;';
+        reflectionDiv.innerHTML = `<p>Quick check: Did this approach work for you? (This helps you learn what strategies fit you best.)</p>`;
+        
+        // Insert before any existing nudge
+        const existingNudge = stepDiv.querySelector('.keep-going-nudge');
+        if (existingNudge) {
+            stepDiv.insertBefore(reflectionDiv, existingNudge);
+        } else {
+            stepDiv.appendChild(reflectionDiv);
+        }
     }
 
     askWantToKeepGoing(completedStepDiv) {
