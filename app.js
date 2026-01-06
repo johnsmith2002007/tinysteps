@@ -535,8 +535,8 @@ class AssignmentHelper {
             lowerInput.includes("used to") || lowerInput.includes("before")) {
             if (dobrowskiConfig && dobrowskiConfig.validateWithoutGlorifying && 
                 dobrowskiConfig.validateWithoutGlorifying.enabled) {
-                // "Sometimes feeling worse happens when you're noticing more, not because you're failing. We can take this slowly."
-                return "Sometimes feeling worse happens when you're noticing more, not because you're failing. We can take this slowly.";
+                // BELIEF: Validate their experience without trying to fix it - trust their process
+                return "Sometimes feeling worse happens when you're noticing more, not because you're failing.";
             }
         }
         
@@ -545,8 +545,8 @@ class AssignmentHelper {
             lowerInput.includes("doesn't matter") || lowerInput.includes("doesnt matter")) {
             if (dobrowskiConfig && dobrowskiConfig.meaningMakingOptIn && 
                 dobrowskiConfig.meaningMakingOptIn.enabled) {
-                // Early: "That question makes sense. We don't need an answer right now."
-                return "That question makes sense. We don't need an answer right now.";
+                // BELIEF & AGENCY: Acknowledge the question without trying to resolve it
+                return "That question makes sense.";
             }
         }
         
@@ -728,9 +728,9 @@ class AssignmentHelper {
     // PROPORTIONALITY: Explicit overwhelm gets pause permission, nothing more
     // COMMON SENSE: Don't escalate - user said they're overwhelmed, respect that
     gentleReassurance() {
-        // Permission-based statement, no generic reassurance
-        // No additional instruction or regulation - just pause permission
-        return "You can pause whenever you need to.";
+        // AGENCY: Communicate belief and agency, not permission or instruction
+        // Never imply user needs to be calmed or fixed - just acknowledge their choice
+        return "You can pause whenever you want.";
     }
     
     // DOBROWSKI: Handle intensity as information, not escalation
@@ -1312,10 +1312,10 @@ class AssignmentHelper {
         return this.offerDirectionalOptions(userInput, signal);
     }
     
-    // Permission-based transition to shrinking
-    // PROPORTIONALITY: User requested shrinking - simple transition, no escalation
+    // Agency-based transition to shrinking
+    // BELIEF & AGENCY: Offer options without prescribing - user chooses their path
     permissionBasedTransition() {
-        return "Want to keep going, or should we make this into one tiny step?";
+        return "Want to keep going, or make this into one tiny step?";
     }
     
     // Present next tiny step for action mode
@@ -2327,7 +2327,7 @@ class AssignmentHelper {
         if (includeRegulation) {
             steps.push({
                 title: "Take a Breath",
-                description: "Pause for a moment. Take one slow breath. You can pause whenever you need to.",
+                description: "If you want, you can pause here. You can pause whenever you want.",
                 needsInput: false
             });
         }
@@ -3050,7 +3050,7 @@ class AssignmentHelper {
         let regulationText = '';
         if (showsOverwhelm || userSelectedPause) {
             // Only show regulation when user explicitly signals overwhelm OR selects pause
-            regulationText = '<p class="regulation-suggestion">Take a breath. You can pause whenever you need to.</p>';
+            regulationText = '<p class="regulation-suggestion">You can pause whenever you want.</p>';
         }
         
         const responseDiv = document.createElement('div');
