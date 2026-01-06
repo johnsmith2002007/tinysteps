@@ -1129,17 +1129,26 @@ class AssignmentHelper {
     }
     
     // Offer 2-3 directional options as buttons/statements (actions/paths, not inquiries)
+    // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
     offerDirectionalOptions(userInput, signal) {
         const lowerInput = userInput.toLowerCase();
         const options = [];
         
+        // Check if user explicitly signals overwhelm (for pause option)
+        const hasExplicitOverwhelm = this.detectsOverwhelmSignal(userInput);
+        
         // If user mentioned irrelevance/pointlessness, offer paths
+        // GUARDRAIL: Do NOT include "Pause for now" for informational inputs unless user explicitly signals overwhelm
         if (lowerInput.includes("irrelevant") || lowerInput.includes("doesn't matter") || 
             lowerInput.includes("doesnt matter") || lowerInput.includes("pointless") ||
-            lowerInput.includes("boring")) {
+            lowerInput.includes("boring") || lowerInput.includes("don't care") ||
+            lowerInput.includes("dont care")) {
             options.push("Talk through why it feels pointless");
             options.push("Help get through just the minimum");
-            options.push("Pause for now");
+            // Only add pause option if user explicitly signals overwhelm
+            if (hasExplicitOverwhelm) {
+                options.push("Pause for now");
+            }
             return options;
         }
         
@@ -1883,9 +1892,19 @@ class AssignmentHelper {
     }
     
     // Handle actions from canonical response
+    // Handle actions from canonical response
+    // GUARDRAIL: When user selects "pause" or "this is too much" option, allow calming language
     handleCanonicalAction(action, originalInput) {
         switch(action) {
             case 'pause':
+                // User explicitly selected pause option - this is an explicit overwhelm signal
+                // Mark this in context so calming language can be shown
+                if (this.conversationContext.length > 0) {
+                    const lastContext = this.conversationContext[this.conversationContext.length - 1];
+                    if (lastContext) {
+                        lastContext.userSelectedPause = true; // Flag for calming language guardrail
+                    }
+                }
                 this.pauseAndSave();
                 break;
             case 'make-smaller':
@@ -2919,11 +2938,14 @@ class AssignmentHelper {
         // Use paraphrase mirror, then offer action (but only after clarification)
         const mirror = this.createParaphraseMirror(answer);
         
-        // Check if user explicitly signals overwhelm - only then show regulation
+        // GUARDRAIL: Check if user explicitly signals overwhelm OR selected pause option
+        // Only then show regulation/calming language
         const showsOverwhelm = this.detectsOverwhelmSignal(answer);
+        const userSelectedPause = this.conversationContext.length > 0 && 
+                                 this.conversationContext[this.conversationContext.length - 1]?.userSelectedPause;
         let regulationText = '';
-        if (showsOverwhelm) {
-            // Only show regulation when user explicitly signals overwhelm
+        if (showsOverwhelm || userSelectedPause) {
+            // Only show regulation when user explicitly signals overwhelm OR selects pause
             regulationText = '<p class="regulation-suggestion">Take a breath. You can pause whenever you need to.</p>';
         }
         
