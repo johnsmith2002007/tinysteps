@@ -1,13 +1,16 @@
 // Frank - Assignment Helper App
 
-// Conversation modes (final set)
-const MODES = {
-    LISTENING: 'listening',
-    CLARIFYING: 'clarifying',
-    SHRINKING: 'shrinking',
-    STEPPING: 'stepping',
-    PAUSED: 'paused'
-};
+// Conversation modes - use config if available, otherwise fallback
+// Config-driven from FRANK_CONFIG.conversationModes
+const MODES = (typeof FRANK_CONFIG !== 'undefined' && FRANK_CONFIG.conversationModes) 
+    ? FRANK_CONFIG.conversationModes
+    : {
+        LISTENING: 'listening',
+        CLARIFYING: 'clarifying',
+        SHRINKING: 'shrinking',
+        STEPPING: 'stepping',
+        PAUSED: 'paused'
+    };
 
 class AssignmentHelper {
     constructor() {
@@ -37,39 +40,29 @@ class AssignmentHelper {
     
     /**
      * Detect certainty level from user input
-     * CERTAINTY RULES: Match confidence to user's certainty level
-     * - Low: tentative language, exploration ("I think", "maybe", "it feels like")
-     * - High: absolute statements, strong emotions ("I hate", "this is pointless", "I can't")
-     * - Medium: default for neutral statements
+     * Uses config-driven markers from FRANK_CONFIG.reasoning.certaintyHandling
      */
     detectCertaintyLevel(userInput) {
         if (!userInput) return 'medium';
         
+        // Safety check for config
+        if (typeof FRANK_CONFIG === 'undefined' || !FRANK_CONFIG.reasoning || !FRANK_CONFIG.reasoning.certaintyHandling) {
+            console.warn('FRANK_CONFIG not available, using fallback certainty detection');
+            return 'medium';
+        }
+        
         const lowerInput = userInput.toLowerCase();
-        
-        // High certainty markers: absolute statements, strong emotions, definitive language
-        const highCertaintyMarkers = [
-            'i hate', 'i love', 'this is', 'that is', 'it is', 'always', 'never',
-            'impossible', 'can\'t', 'cannot', 'won\'t', 'will not', 'definitely',
-            'absolutely', 'completely', 'totally', 'pointless', 'useless', 'waste',
-            'i can\'t', 'i cannot', 'i give up', 'i\'m done', 'im done'
-        ];
-        
-        // Low certainty markers: tentative, exploratory, uncertain language
-        const lowCertaintyMarkers = [
-            'i think', 'maybe', 'perhaps', 'might', 'could be', 'it feels like',
-            'it seems like', 'i\'m not sure', 'im not sure', 'i guess', 'i suppose',
-            'sort of', 'kind of', 'a little', 'a bit', 'somewhat', 'possibly',
-            'i wonder', 'not really sure', 'not sure', 'unsure', 'uncertain'
-        ];
+        const certaintyConfig = FRANK_CONFIG.reasoning.certaintyHandling;
         
         // Check for high certainty first (stronger signal)
-        if (highCertaintyMarkers.some(marker => lowerInput.includes(marker))) {
+        if (certaintyConfig.highCertaintyMarkers && 
+            certaintyConfig.highCertaintyMarkers.some(marker => lowerInput.includes(marker))) {
             return 'high';
         }
         
         // Check for low certainty
-        if (lowCertaintyMarkers.some(marker => lowerInput.includes(marker))) {
+        if (certaintyConfig.lowCertaintyMarkers && 
+            certaintyConfig.lowCertaintyMarkers.some(marker => lowerInput.includes(marker))) {
             return 'low';
         }
         
@@ -78,29 +71,35 @@ class AssignmentHelper {
     }
     
     // Classify user input into signal types
+    // Uses config-driven patterns from FRANK_CONFIG.inputClassification
     classifyInput(userInput) {
         const lowerInput = userInput.toLowerCase();
+        
+        // Safety check for config
+        if (typeof FRANK_CONFIG === 'undefined' || !FRANK_CONFIG.inputClassification) {
+            console.warn('FRANK_CONFIG not available, using fallback classification');
+            // Fallback to basic classification
+            const certaintyLevel = 'medium';
+            if (userInput.split(' ').length < 10) {
+                return { type: 'emotional', input: userInput, certaintyLevel };
+            }
+            return { type: 'ready_for_action', input: userInput, certaintyLevel };
+        }
+        
+        const classificationConfig = FRANK_CONFIG.inputClassification;
         
         // Detect certainty level for proportional response matching
         const certaintyLevel = this.detectCertaintyLevel(userInput);
         
         // Check for overwhelmed signal first (highest priority)
-        const overwhelmSignals = [
-            'i can\'t', 'i cannot', 'too much', 'too hard', 'i give up',
-            'this is too much', 'can\'t do this', 'cannot do this',
-            'shutdown', 'shut down', 'freeze', 'frozen', 'stuck', 'trapped',
-            'i\'m done', 'im done', 'can\'t handle', 'cannot handle'
-        ];
-        if (overwhelmSignals.some(signal => lowerInput.includes(signal))) {
+        if (classificationConfig.overwhelmSignals && 
+            classificationConfig.overwhelmSignals.some(signal => lowerInput.includes(signal))) {
             return { type: 'overwhelmed', input: userInput, certaintyLevel };
         }
         
         // Check for request to shrink
-        const shrinkSignals = [
-            'make it smaller', 'break it down', 'too big', 'too large',
-            'smaller steps', 'tiny step', 'one step', 'simpler'
-        ];
-        if (shrinkSignals.some(signal => lowerInput.includes(signal))) {
+        if (classificationConfig.shrinkSignals && 
+            classificationConfig.shrinkSignals.some(signal => lowerInput.includes(signal))) {
             return { type: 'request_to_shrink', input: userInput, certaintyLevel };
         }
         
@@ -116,45 +115,21 @@ class AssignmentHelper {
         // Check for explanatory patterns (only if NOT already in clarifying mode)
         // This prevents getting stuck in a loop of clarification
         if (this.conversationMode !== MODES.CLARIFYING) {
-            const explanatoryPatterns = [
-                /it doesn't feel/i,
-                /it doesnt feel/i,
-                /it doesn't seem/i,
-                /it doesnt seem/i,
-                /because/i,
-                /the problem is/i,
-                /what's wrong is/i,
-                /whats wrong is/i,
-                /doesn't connect/i,
-                /doesnt connect/i,
-                /not relevant/i,
-                /irrelevant/i
-            ];
-            if (explanatoryPatterns.some(pattern => pattern.test(userInput))) {
+            if (classificationConfig.explanatoryPatterns && 
+                classificationConfig.explanatoryPatterns.some(pattern => pattern.test(userInput))) {
                 return { type: 'explanatory', input: userInput, certaintyLevel };
             }
         }
         
         // Check for emotional indicators
-        const emotionalKeywords = [
-            'hate', 'love', 'feel', 'feeling', 'frustrated', 'anxious', 'stressed',
-            'overwhelmed', 'stuck', 'difficult', 'hard', 'sucks', 'boring', 'pointless',
-            'useless', 'waste of time', 'don\'t care', 'dont care',
-            'impossible', 'too much', 'too hard'
-        ];
-        if (emotionalKeywords.some(keyword => lowerInput.includes(keyword))) {
+        if (classificationConfig.emotionalKeywords && 
+            classificationConfig.emotionalKeywords.some(keyword => lowerInput.includes(keyword))) {
             return { type: 'emotional', input: userInput, certaintyLevel };
         }
         
         // Check for action-oriented (assignment) input
-        const assignmentKeywords = [
-            'assignment', 'essay', 'paper', 'write a', 'write an', 'read the', 
-            'read a', 'read an', 'book report', 'compare', 'contrast', 'analyze',
-            'research paper', 'research project', 'homework assignment', 'due date',
-            'how do i', 'how to', 'what should i', 'help me', 'show me', 'explain',
-            'break down', 'steps', 'guide', 'walk me through'
-        ];
-        if (assignmentKeywords.some(keyword => lowerInput.includes(keyword))) {
+        if (classificationConfig.assignmentKeywords && 
+            classificationConfig.assignmentKeywords.some(keyword => lowerInput.includes(keyword))) {
             return { type: 'ready_for_action', input: userInput, certaintyLevel };
         }
         
@@ -295,8 +270,14 @@ class AssignmentHelper {
                 
             case 'ready_for_action':
                 // PROPORTIONALITY: Only show actions if user has indicated readiness
+                // Uses config-driven rules from FRANK_CONFIG.actionButtons.requireReadiness
                 // COMMON SENSE: Don't assume readiness - wait for explicit signal
-                const hasIndicatedReadiness = context.currentMode === MODES.CLARIFYING || 
+                const requireReadiness = (typeof FRANK_CONFIG !== 'undefined' && 
+                                         FRANK_CONFIG.actionButtons && 
+                                         FRANK_CONFIG.actionButtons.requireReadiness) !== false;
+                
+                const hasIndicatedReadiness = !requireReadiness || 
+                                             context.currentMode === MODES.CLARIFYING || 
                                              context.currentMode === MODES.SHRINKING ||
                                              this.conversationContext.length > 1 ||
                                              // Direct assignment request indicates readiness
@@ -324,18 +305,26 @@ class AssignmentHelper {
     // Helper functions for canonical response flow
     
     // Check if input is a direct assignment request (indicates readiness)
+    // Uses config-driven patterns from FRANK_CONFIG.inputClassification.directRequestPatterns
     isDirectAssignmentRequest(input) {
-        const lowerInput = input.toLowerCase();
-        const directRequestPatterns = [
-            /help me (write|do|complete|finish)/i,
-            /how do i/i,
-            /how to/i,
-            /show me/i,
-            /break down/i,
-            /steps/i,
-            /guide/i
-        ];
-        return directRequestPatterns.some(pattern => pattern.test(input));
+        // Safety check for config
+        if (typeof FRANK_CONFIG === 'undefined' || !FRANK_CONFIG.inputClassification || 
+            !FRANK_CONFIG.inputClassification.directRequestPatterns) {
+            // Fallback patterns
+            const fallbackPatterns = [
+                /help me (write|do|complete|finish)/i,
+                /how do i/i,
+                /how to/i,
+                /show me/i,
+                /break down/i,
+                /steps/i,
+                /guide/i
+            ];
+            return fallbackPatterns.some(pattern => pattern.test(input));
+        }
+        
+        const patterns = FRANK_CONFIG.inputClassification.directRequestPatterns;
+        return patterns.some(pattern => pattern.test(input));
     }
     
     // Mirror emotion using user's language
