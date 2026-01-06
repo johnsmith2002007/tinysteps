@@ -16,12 +16,6 @@ class AssignmentHelper {
         this.currentProgress = null;
         this.funFactTimer = null;
         this.conversationState = null; // Track question-answer flow for resilience help
-        
-        // Single source of truth for conversation state
-        this.conversationMode = null; // Uses MODES constant
-        this.lastUserInput = null; // Store last user input for contextual responses
-        this.conversationContext = []; // Track conversation history for context
-        
         this.init();
         this.checkPermissionCard();
         this.initFunFacts();
@@ -540,17 +534,22 @@ class AssignmentHelper {
             return;
         }
 
-        this.currentAssignment = input;
-        
-        // Use canonical response flow: classify, then respond once in one mode
-        const context = this.buildContext(input);
-        const response = this.generateFrankResponse(input, context);
-        
-        // Set mode from response
-        this.setConversationMode(response.mode);
-        
-        // Display the response based on mode
-        this.displayCanonicalResponse(response, input);
+        try {
+            this.currentAssignment = input;
+            
+            // Use canonical response flow: classify, then respond once in one mode
+            const context = this.buildContext(input);
+            const response = this.generateFrankResponse(input, context);
+            
+            // Set mode from response
+            this.setConversationMode(response.mode);
+            
+            // Display the response based on mode
+            this.displayCanonicalResponse(response, input);
+        } catch (error) {
+            console.error('Error processing assignment:', error);
+            alert('Something went wrong. Please try again.');
+        }
     }
     
     // Build context for response generation
@@ -567,6 +566,12 @@ class AssignmentHelper {
     displayCanonicalResponse(response, originalInput) {
         const responseContent = document.getElementById('responseContent');
         const responseHeader = document.getElementById('responseHeader');
+        
+        if (!responseContent) {
+            console.error('responseContent element not found');
+            alert('Error: Could not find response container. Please refresh the page.');
+            return;
+        }
         
         // Open modal
         this.openModal();
