@@ -1712,6 +1712,18 @@ class AssignmentHelper {
         // Build HTML based on response structure
         let html = '';
         
+        // Add transition cue if moving from clarification to understanding
+        if (response._transitionCue || 
+            (this.conversationContext.length > 0 && 
+             this.conversationContext[this.conversationContext.length - 1]?._transitionedFromClarifying)) {
+            html += `
+                <div class="transition-cue">
+                    <span class="transition-indicator">→</span>
+                    <span class="transition-text">Got it. Here are some ways we can move forward:</span>
+                </div>
+            `;
+        }
+        
         // Add message
         if (response.message) {
             if (typeof response.message === 'string') {
