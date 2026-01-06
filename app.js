@@ -555,17 +555,25 @@ class AssignmentHelper {
             this.currentAssignment = input;
             
             // Use canonical response flow: classify, then respond once in one mode
+            console.log('Building context...');
             const context = this.buildContext(input);
+            console.log('Context built:', context);
+            
+            console.log('Generating response...');
             const response = this.generateFrankResponse(input, context);
+            console.log('Response generated:', response);
             
             // Set mode from response
             this.setConversationMode(response.mode);
             
             // Display the response based on mode
+            console.log('Displaying response...');
             this.displayCanonicalResponse(response, input);
+            console.log('Response displayed successfully');
         } catch (error) {
             console.error('Error processing assignment:', error);
-            alert('Something went wrong. Please try again.');
+            console.error('Error stack:', error.stack);
+            alert('Something went wrong. Please check the console for details.');
         }
     }
     
@@ -1093,8 +1101,20 @@ class AssignmentHelper {
 
     getPersonaMessage(assignment, type) {
         // Feature Set 6: Use approved emotional acknowledgment language from config
-        const approvedMessages = FRANK_CONFIG.personality.emotionalAcknowledgment.canSay;
-        const resilienceMessages = approvedMessages;
+        // Safety check for FRANK_CONFIG
+        if (typeof FRANK_CONFIG === 'undefined' || !FRANK_CONFIG.personality || !FRANK_CONFIG.personality.emotionalAcknowledgment) {
+            console.warn('FRANK_CONFIG not available, using fallback messages');
+            const fallbackMessages = [
+                "This kind of assignment can feel heavy.",
+                "A lot of people get stuck here.",
+                "You're not behind.",
+                "This looks like a lot."
+            ];
+            const resilienceMessages = fallbackMessages;
+        } else {
+            const approvedMessages = FRANK_CONFIG.personality.emotionalAcknowledgment.canSay;
+            var resilienceMessages = approvedMessages;
+        }
         
         const messages = {
             resilience_help: resilienceMessages[Math.floor(Math.random() * resilienceMessages.length)],
