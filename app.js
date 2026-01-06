@@ -541,6 +541,28 @@ class AssignmentHelper {
         const modal = document.getElementById('responseModal');
         modal.classList.add('hidden');
         document.body.style.overflow = '';
+        
+        // Always restore the main input section when closing modal
+        const mainInputSection = document.querySelector('.main-input-section');
+        if (mainInputSection) {
+            mainInputSection.style.display = '';
+        }
+        
+        // Clear the input field and reset button text
+        const assignmentInput = document.getElementById('assignmentInput');
+        const submitBtn = document.getElementById('submitBtn');
+        if (assignmentInput) {
+            assignmentInput.value = '';
+            assignmentInput.placeholder = 'Messy is fine, add your assignment or random thoughts here';
+        }
+        if (submitBtn) {
+            submitBtn.textContent = 'Help me get started';
+        }
+        
+        // Reset conversation state
+        this.conversationState = null;
+        this.currentAssignment = null;
+        this.lastUserInput = null;
     }
 
     openModal() {
