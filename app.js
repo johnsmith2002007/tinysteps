@@ -59,31 +59,35 @@ class AssignmentHelper {
             return { type: 'request_to_shrink', input: userInput };
         }
         
-        // Check for ready for action (after clarification)
-        if (this.conversationMode === MODES.CLARIFYING || this.conversationMode === MODES.SHRINKING) {
-            // If we're in clarifying/shrinking mode and user responds, they're ready
+        // IMPORTANT: If we're already in CLARIFYING mode and user responds, they've clarified
+        // Transition to action mode (this takes priority over re-classifying as explanatory)
+        if (this.conversationMode === MODES.CLARIFYING) {
+            // User has answered the clarifying question - they're ready for action
             if (userInput.trim().length > 0) {
                 return { type: 'ready_for_action', input: userInput };
             }
         }
         
-        // Check for explanatory patterns
-        const explanatoryPatterns = [
-            /it doesn't feel/i,
-            /it doesnt feel/i,
-            /it doesn't seem/i,
-            /it doesnt seem/i,
-            /because/i,
-            /the problem is/i,
-            /what's wrong is/i,
-            /whats wrong is/i,
-            /doesn't connect/i,
-            /doesnt connect/i,
-            /not relevant/i,
-            /irrelevant/i
-        ];
-        if (explanatoryPatterns.some(pattern => pattern.test(userInput))) {
-            return { type: 'explanatory', input: userInput };
+        // Check for explanatory patterns (only if NOT already in clarifying mode)
+        // This prevents getting stuck in a loop of clarification
+        if (this.conversationMode !== MODES.CLARIFYING) {
+            const explanatoryPatterns = [
+                /it doesn't feel/i,
+                /it doesnt feel/i,
+                /it doesn't seem/i,
+                /it doesnt seem/i,
+                /because/i,
+                /the problem is/i,
+                /what's wrong is/i,
+                /whats wrong is/i,
+                /doesn't connect/i,
+                /doesnt connect/i,
+                /not relevant/i,
+                /irrelevant/i
+            ];
+            if (explanatoryPatterns.some(pattern => pattern.test(userInput))) {
+                return { type: 'explanatory', input: userInput };
+            }
         }
         
         // Check for emotional indicators
