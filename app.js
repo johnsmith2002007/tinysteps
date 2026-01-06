@@ -279,10 +279,11 @@ class AssignmentHelper {
                 
                 // PROPORTIONALITY: Explanatory input gets meaning reflection + narrowing question
                 // COMMON SENSE: Don't escalate - user is explaining, not asking for solutions
+                const explanatoryQuestion = this.narrowChoices(userInput, certaintyLevel);
                 const explanatoryResponse = {
                     mode: MODES.CLARIFYING,
                     message: this.reflectMeaning(userInput, certaintyLevel),
-                    question: this.narrowChoices(userInput, certaintyLevel),
+                    question: explanatoryQuestion,
                     actions: []
                 };
                 // Track that we asked a question
@@ -290,6 +291,7 @@ class AssignmentHelper {
                     const lastContext = this.conversationContext[this.conversationContext.length - 1];
                     if (lastContext) {
                         lastContext.hadQuestion = true;
+                        lastContext.lastQuestion = explanatoryQuestion;
                     }
                 }
                 return explanatoryResponse;
@@ -659,25 +661,231 @@ class AssignmentHelper {
     }
     
     // ANTI-QUESTION-CHAINING: Detect if user is answering a previous question
+    // A response should be treated as an answer if:
+    // 1. Previous Frank message contained a question
+    // 2. User input is short or declarative (not exploratory)
+    // 3. Semantically aligns with the topic of the question
+    // 4. Reduces ambiguity rather than introducing new uncertainty
     isAnsweringPreviousQuestion(userInput, context) {
-        // Check if we're in CLARIFYING mode (means we asked a question)
-        if (this.conversationMode === MODES.CLARIFYING) {
-            // User provided non-empty input - they're answering
-            if (userInput.trim().length > 0) {
+        // Must have previous context to check
+        if (this.conversationContext.length === 0) {
+            return false;
+        }
+        
+        const lastContext = this.conversationContext[this.conversationContext.length - 1];
+        
+        // Check if previous response had a question
+        if (!lastContext || !lastContext.hadQuestion) {
+            return false;
+        }
+        
+        const previousQuestion = lastContext.lastQuestion;
+        if (!previousQuestion) {
+            // Fallback: if in CLARIFYING mode, assume they're answering
+            if (this.conversationMode === MODES.CLARIFYING && userInput.trim().length > 0) {
+                return true;
+            }
+            return false;
+        }
+        
+        // Analyze if input is an answer to the question
+        return this.isSemanticAnswer(userInput, previousQuestion);
+    }
+    
+    // Analyze if user input semantically answers the previous question
+    isSemanticAnswer(userInput, previousQuestion) {
+        const lowerInput = userInput.toLowerCase();
+        const lowerQuestion = previousQuestion.toLowerCase();
+        
+        // Check 1: Is input short or declarative (not exploratory)?
+        const isShortOrDeclarative = this.isShortOrDeclarative(userInput);
+        if (!isShortOrDeclarative) {
+            return false; // Too exploratory, probably not an answer
+        }
+        
+        // Check 2: Does input semantically align with question topic?
+        const semanticAlignment = this.checkSemanticAlignment(userInput, previousQuestion);
+        if (!semanticAlignment) {
+            return false; // Doesn't align with question topic
+        }
+        
+        // Check 3: Does input reduce ambiguity rather than introduce new uncertainty?
+        const reducesAmbiguity = this.reducesAmbiguity(userInput);
+        if (!reducesAmbiguity) {
+            return false; // Introduces new uncertainty, probably not an answer
+        }
+        
+        return true;
+    }
+    
+    // Check if input is short or declarative (not exploratory)
+    isShortOrDeclarative(userInput) {
+        const trimmed = userInput.trim();
+        const wordCount = trimmed.split(/\s+/).length;
+        
+        // Short: 10 words or less
+        if (wordCount <= 10) {
+            return true;
+        }
+        
+        // Declarative patterns (even if longer)
+        const declarativePatterns = [
+            /^(it|this|that|i|we|they) (is|feels|seems|doesn't|doesnt|can't|cannot)/i,
+            /^(because|since|when|if)/i,
+            /^(i don't|i dont|i can't|i cannot|i'm|im)/i,
+            /^(seems|feels|looks|sounds)/i
+        ];
+        
+        if (declarativePatterns.some(pattern => pattern.test(trimmed))) {
+            return true;
+        }
+        
+        // Exploratory patterns (not declarative)
+        const exploratoryPatterns = [
+            /\?$/, // Ends with question mark
+            /^(what|why|how|when|where|who|which|can|could|should|would|might|maybe|perhaps)/i,
+            /i (think|wonder|guess|suppose|feel like|feel as if)/i
+        ];
+        
+        if (exploratoryPatterns.some(pattern => pattern.test(trimmed))) {
+            return false; // Too exploratory
+        }
+        
+        // Default: if not clearly exploratory, treat as potentially declarative
+        return wordCount <= 15;
+    }
+    
+    // Check if input semantically aligns with question topic
+    checkSemanticAlignment(userInput, previousQuestion) {
+        const lowerInput = userInput.toLowerCase();
+        const lowerQuestion = previousQuestion.toLowerCase();
+        
+        // Extract key topics from question
+        const questionTopics = this.extractQuestionTopics(previousQuestion);
+        
+        // Check if input addresses any of these topics
+        for (const topic of questionTopics) {
+            if (lowerInput.includes(topic)) {
                 return true;
             }
         }
         
-        // Check conversation context for previous question
-        if (this.conversationContext.length > 0) {
-            const lastContext = this.conversationContext[this.conversationContext.length - 1];
-            // If last response had a question, and current input is substantial, it's likely an answer
-            if (lastContext && lastContext.hadQuestion && userInput.trim().length > 3) {
+        // Check for semantic relationships
+        // If question asks about "what feels worst", answers about feelings/problems align
+        if (lowerQuestion.includes('worst') || lowerQuestion.includes('hardest') || 
+            lowerQuestion.includes('bother') || lowerQuestion.includes('difficult')) {
+            const answerIndicators = ['irrelevant', 'boring', 'pointless', 'hard', 'difficult', 
+                                     'bad at', 'don\'t get', 'dont get', 'because', 'seems', 'feels'];
+            if (answerIndicators.some(indicator => lowerInput.includes(indicator))) {
                 return true;
             }
+        }
+        
+        // If question asks about "why" or "what makes", answers with "because" or explanations align
+        if (lowerQuestion.includes('why') || lowerQuestion.includes('what makes') || 
+            lowerQuestion.includes('what about')) {
+            if (lowerInput.includes('because') || lowerInput.includes('since') || 
+                lowerInput.startsWith('it') || lowerInput.startsWith('this') || 
+                lowerInput.startsWith('that')) {
+                return true;
+            }
+        }
+        
+        // If question asks about relevance/connection, answers about relevance align
+        if (lowerQuestion.includes('relevant') || lowerQuestion.includes('connect') || 
+            lowerQuestion.includes('matter') || lowerQuestion.includes('point')) {
+            if (lowerInput.includes('irrelevant') || lowerInput.includes('doesn\'t matter') || 
+                lowerInput.includes('doesnt matter') || lowerInput.includes('pointless') ||
+                lowerInput.includes('boring')) {
+                return true;
+            }
+        }
+        
+        // Default: if in CLARIFYING mode and input is substantial, assume alignment
+        if (this.conversationMode === MODES.CLARIFYING && userInput.trim().length > 3) {
+            return true;
         }
         
         return false;
+    }
+    
+    // Extract key topics from a question
+    extractQuestionTopics(question) {
+        const lowerQuestion = question.toLowerCase();
+        const topics = [];
+        
+        // Extract nouns and key phrases
+        const topicPatterns = [
+            /(what|which|where|who) (about|is|are|does|do|makes|makes|feels|seems)/i,
+            /(feels|seems|is|are) (the|most|really|very|so)/i,
+            /(about|with|for) (it|this|that|the)/i
+        ];
+        
+        // Common question topics
+        if (lowerQuestion.includes('worst') || lowerQuestion.includes('hardest')) {
+            topics.push('worst', 'hardest', 'difficult', 'problem', 'issue');
+        }
+        if (lowerQuestion.includes('relevant') || lowerQuestion.includes('matter')) {
+            topics.push('relevant', 'matter', 'point', 'purpose', 'meaning');
+        }
+        if (lowerQuestion.includes('connect')) {
+            topics.push('connect', 'relate', 'link', 'tie');
+        }
+        if (lowerQuestion.includes('bother') || lowerQuestion.includes('difficult')) {
+            topics.push('bother', 'difficult', 'hard', 'problem', 'issue');
+        }
+        
+        return topics;
+    }
+    
+    // Check if input reduces ambiguity rather than introducing new uncertainty
+    reducesAmbiguity(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // Uncertainty indicators (introduces new ambiguity)
+        const uncertaintyIndicators = [
+            'i don\'t know', 'i dont know', 'not sure', 'unsure', 'uncertain',
+            'maybe', 'perhaps', 'might', 'could be', 'possibly',
+            'i think', 'i guess', 'i suppose', 'i wonder',
+            'what if', 'how about', 'why would', 'could it'
+        ];
+        
+        // If input is mostly uncertainty, it doesn't reduce ambiguity
+        const uncertaintyCount = uncertaintyIndicators.filter(indicator => 
+            lowerInput.includes(indicator)).length;
+        
+        if (uncertaintyCount > 1) {
+            return false; // Too much uncertainty
+        }
+        
+        // Answer indicators (reduces ambiguity)
+        const answerIndicators = [
+            'because', 'since', 'when', 'it\'s', 'its', 'this is', 'that is',
+            'seems', 'feels', 'is', 'are', 'doesn\'t', 'doesnt', 'can\'t', 'cannot',
+            'irrelevant', 'boring', 'pointless', 'hard', 'difficult', 'bad at',
+            'don\'t get', 'dont get'
+        ];
+        
+        const answerCount = answerIndicators.filter(indicator => 
+            lowerInput.includes(indicator)).length;
+        
+        // If has answer indicators and low uncertainty, reduces ambiguity
+        if (answerCount > 0 && uncertaintyCount === 0) {
+            return true;
+        }
+        
+        // If has answer indicators and only one uncertainty word, still reduces ambiguity
+        if (answerCount > 0 && uncertaintyCount <= 1) {
+            return true;
+        }
+        
+        // Short declarative statements reduce ambiguity
+        if (userInput.trim().split(/\s+/).length <= 8 && uncertaintyCount === 0) {
+            return true;
+        }
+        
+        // Default: if not clearly uncertain, assume it reduces ambiguity
+        return uncertaintyCount === 0;
     }
     
     // ANTI-QUESTION-CHAINING: Handle when user answers a question
@@ -1084,6 +1292,7 @@ class AssignmentHelper {
                     const lastContext = this.conversationContext[this.conversationContext.length - 1];
                     if (lastContext) {
                         lastContext.hadQuestion = true;
+                        lastContext.lastQuestion = response.question; // Store the actual question
                     }
                 }
             }
