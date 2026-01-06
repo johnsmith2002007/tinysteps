@@ -16,6 +16,12 @@ class AssignmentHelper {
         this.currentProgress = null;
         this.funFactTimer = null;
         this.conversationState = null; // Track question-answer flow for resilience help
+        
+        // Single source of truth for conversation state
+        this.conversationMode = null; // Uses MODES constant
+        this.lastUserInput = null; // Store last user input for contextual responses
+        this.conversationContext = []; // Track conversation history for context
+        
         this.init();
         this.checkPermissionCard();
         this.initFunFacts();
