@@ -438,27 +438,29 @@ class AssignmentHelper {
                 
             case 'ready_for_action':
                 // SINGLE MODE: STEPPING mode - steps/actions only, NO questions, NO reassurance
-                // PROPORTIONALITY: Only show actions if user has indicated readiness
-                // Uses config-driven rules from FRANK_CONFIG.actionButtons.requireReadiness
-                // COMMON SENSE: Don't assume readiness - wait for explicit signal
-                const requireReadiness = (typeof FRANK_CONFIG !== 'undefined' && 
-                                         FRANK_CONFIG.actionButtons && 
-                                         FRANK_CONFIG.actionButtons.requireReadiness) !== false;
+                // CONTEXT-SENSITIVE: Only show "Start this step" when user explicitly expresses readiness
+                // OR when they selected a direction that implies action
+                const hasExplicitReadiness = this.detectsExplicitReadiness(userInput);
+                const selectedActionDirection = this.conversationContext.length > 0 && 
+                                               this.conversationContext[this.conversationContext.length - 1]?.selectedDirection;
+                const directionIsAction = selectedActionDirection && 
+                                         this.directionImpliesAction(selectedActionDirection);
                 
-                const hasIndicatedReadiness = !requireReadiness || 
-                                             context.currentMode === MODES.CLARIFYING || 
-                                             context.currentMode === MODES.OFFERING_DIRECTION ||
-                                             this.conversationContext.length > 1 ||
-                                             // Direct assignment request indicates readiness
-                                             (this.conversationContext.length === 1 && 
-                                              signal.input && 
-                                              this.isDirectAssignmentRequest(signal.input));
+                // Show task-execution CTAs only if:
+                // 1. User explicitly expressed readiness, OR
+                // 2. User selected a direction that implies action, OR
+                // 3. Direct assignment request (first interaction)
+                const shouldShowActionButtons = hasExplicitReadiness || 
+                                              directionIsAction ||
+                                              (this.conversationContext.length === 1 && 
+                                               signal.input && 
+                                               this.isDirectAssignmentRequest(signal.input));
                 
                 return {
                     mode: MODES.STEPPING, // STEPPING mode: steps/actions only, no questions, no reassurance
                     message: this.presentNextTinyStep(context),
                     question: null, // NO question in STEPPING mode
-                    actions: hasIndicatedReadiness ? ['Start this step', 'Make it smaller'] : []
+                    actions: shouldShowActionButtons ? ['Start this step', 'Make it smaller'] : []
                 };
                 
             default:
@@ -1020,7 +1022,8 @@ class AssignmentHelper {
             mode: visibleMode, // OFFERING_DIRECTION mode: message + actions, no questions
             message: mirror + (understanding ? " " + understanding : ""),
             question: null, // NO QUESTION - user already answered
-            actions: directionChoices
+            actions: directionChoices,
+            _transitionCue: true // Flag to show transition cue from clarification to understanding
         };
         
         // Mark internal understanding state in context (not in response object)
@@ -1028,6 +1031,7 @@ class AssignmentHelper {
             const lastContext = this.conversationContext[this.conversationContext.length - 1];
             if (lastContext) {
                 lastContext._internalState = 'understanding'; // Internal guardrail flag
+                lastContext._transitionedFromClarifying = true; // Flag for transition cue
             }
         }
         
@@ -1129,7 +1133,8 @@ class AssignmentHelper {
     }
     
     // Offer 2-3 directional options as buttons/statements (actions/paths, not inquiries)
-    // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
+    // CONTEXT-SENSITIVE: After explanations, offer reflective/orienting options
+    // Only show task-execution CTAs ("Start this step") when user explicitly expresses readiness
     offerDirectionalOptions(userInput, signal) {
         const lowerInput = userInput.toLowerCase();
         const options = [];
@@ -1137,14 +1142,36 @@ class AssignmentHelper {
         // Check if user explicitly signals overwhelm (for pause option)
         const hasExplicitOverwhelm = this.detectsOverwhelmSignal(userInput);
         
+        // Check if this is an explanatory/reflective response (user provided explanation or reason)
+        const isExplanatory = signal.type === 'explanatory' || 
+                             lowerInput.includes("because") || 
+                             lowerInput.includes("since") ||
+                             lowerInput.includes("it's") || 
+                             lowerInput.includes("its") ||
+                             lowerInput.includes("feels like") ||
+                             lowerInput.includes("seems like");
+        
+        // After explanatory input, offer reflective/orienting options (not task execution)
+        if (isExplanatory) {
+            options.push("That makes sense");
+            options.push("Talk more about this");
+            options.push("Help me get through the minimum");
+            // Only add pause option if user explicitly signals overwhelm
+            if (hasExplicitOverwhelm) {
+                options.push("Pause for now");
+            }
+            return options;
+        }
+        
         // If user mentioned irrelevance/pointlessness, offer paths
         // GUARDRAIL: Do NOT include "Pause for now" for informational inputs unless user explicitly signals overwhelm
         if (lowerInput.includes("irrelevant") || lowerInput.includes("doesn't matter") || 
             lowerInput.includes("doesnt matter") || lowerInput.includes("pointless") ||
             lowerInput.includes("boring") || lowerInput.includes("don't care") ||
             lowerInput.includes("dont care")) {
-            options.push("Talk through why it feels pointless");
-            options.push("Help get through just the minimum");
+            options.push("That makes sense");
+            options.push("Talk more about this");
+            options.push("Help me get through the minimum");
             // Only add pause option if user explicitly signals overwhelm
             if (hasExplicitOverwhelm) {
                 options.push("Pause for now");
@@ -1156,8 +1183,9 @@ class AssignmentHelper {
         // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
         if (lowerInput.includes("hard") || lowerInput.includes("difficult") || 
             lowerInput.includes("stuck")) {
+            options.push("That makes sense");
+            options.push("Talk more about this");
             options.push("Make this smaller");
-            options.push("Talk through what's hard");
             // Only add pause option if user explicitly signals overwhelm
             if (hasExplicitOverwhelm || lowerInput.includes("overwhelmed")) {
                 options.push("Pause for now");
@@ -1169,7 +1197,8 @@ class AssignmentHelper {
         // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
         if (lowerInput.includes("don't get") || lowerInput.includes("dont get") || 
             lowerInput.includes("don't understand") || lowerInput.includes("dont understand")) {
-            options.push("Help explain this to your teacher");
+            options.push("That makes sense");
+            options.push("Talk more about this");
             options.push("Break this down differently");
             // Only add pause option if user explicitly signals overwhelm
             if (hasExplicitOverwhelm) {
@@ -1178,15 +1207,47 @@ class AssignmentHelper {
             return options;
         }
         
-        // Default directional options (actions, not questions)
+        // Default directional options (reflective/orienting, not task execution)
         // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
-        options.push("Keep exploring");
-        options.push("Make this smaller");
+        options.push("That makes sense");
+        options.push("Talk more about this");
+        options.push("Help me get through the minimum");
         // Only add pause option if user explicitly signals overwhelm
         if (hasExplicitOverwhelm) {
             options.push("Pause for now");
         }
         return options;
+    }
+    
+    // Detect if user explicitly expresses readiness for action
+    // Only show "Start this step" when readiness is explicitly expressed
+    detectsExplicitReadiness(userInput) {
+        if (!userInput) return false;
+        const lowerInput = userInput.toLowerCase();
+        
+        // Explicit readiness indicators
+        const readinessSignals = [
+            'i\'m ready', 'im ready', 'ready', 'let\'s start', 'lets start', 'let\'s go', 'lets go',
+            'show me', 'help me start', 'i want to start', 'can we start', 'how do i start',
+            'what\'s the first step', 'whats the first step', 'first step', 'begin', 'start now',
+            'i want to do this', 'let\'s do this', 'lets do this', 'i\'m ready to start', 'im ready to start'
+        ];
+        
+        return readinessSignals.some(signal => lowerInput.includes(signal));
+    }
+    
+    // Check if a selected direction implies action (should show "Start this step")
+    directionImpliesAction(directionText) {
+        if (!directionText) return false;
+        const lowerText = directionText.toLowerCase();
+        
+        // Action-implying directions
+        const actionDirections = [
+            'help me get through', 'help me start', 'show me', 'let\'s start', 'lets start',
+            'make this smaller', 'break this down', 'start this', 'begin', 'get started'
+        ];
+        
+        return actionDirections.some(direction => lowerText.includes(direction));
     }
     
     // Determine next visible mode after answer (UNDERSTANDING is internal, not visible)
@@ -1893,8 +1954,26 @@ class AssignmentHelper {
     
     // Handle actions from canonical response
     // Handle actions from canonical response
+    // CONTEXT-SENSITIVE: Track selected direction to determine if action buttons should be shown
     // GUARDRAIL: When user selects "pause" or "this is too much" option, allow calming language
     handleCanonicalAction(action, originalInput) {
+        // Get the action text from the button that was clicked
+        const actionButtons = document.querySelectorAll('.contextual-btn');
+        let selectedDirection = null;
+        actionButtons.forEach(btn => {
+            if (btn.dataset.action === action) {
+                selectedDirection = btn.textContent;
+            }
+        });
+        
+        // Store selected direction in context for readiness detection
+        if (selectedDirection && this.conversationContext.length > 0) {
+            const lastContext = this.conversationContext[this.conversationContext.length - 1];
+            if (lastContext) {
+                lastContext.selectedDirection = selectedDirection;
+            }
+        }
+        
         switch(action) {
             case 'pause':
                 // User explicitly selected pause option - this is an explicit overwhelm signal
@@ -1916,6 +1995,15 @@ class AssignmentHelper {
             case 'start-step':
                 // Continue to next step
                 this.advanceToNextStepInFlow();
+                break;
+            case 'that-makes-sense':
+            case 'talk-more-about-this':
+            case 'help-me-get-through-the-minimum':
+                // User selected a reflective/orienting option - generate response based on selection
+                // These don't immediately show "Start this step" - they continue the conversation
+                const directionResponse = this.generateFrankResponse(selectedDirection || action, this.buildContext(originalInput));
+                this.setConversationMode(directionResponse.mode);
+                this.displayCanonicalResponse(directionResponse, originalInput);
                 break;
             default:
                 console.log('Unknown action:', action);
