@@ -2919,6 +2919,13 @@ class AssignmentHelper {
     }
 }
 
-// Initialize the app
-const app = new AssignmentHelper();
+// Initialize the app when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        window.app = new AssignmentHelper();
+    });
+} else {
+    // DOM is already ready
+    window.app = new AssignmentHelper();
+}
 
