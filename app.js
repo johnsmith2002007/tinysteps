@@ -573,7 +573,14 @@ class AssignmentHelper {
         } catch (error) {
             console.error('Error processing assignment:', error);
             console.error('Error stack:', error.stack);
-            alert('Something went wrong. Please check the console for details.');
+            console.error('Error details:', {
+                message: error.message,
+                name: error.name,
+                stack: error.stack
+            });
+            // Show more helpful error message
+            const errorMsg = error.message || 'Unknown error';
+            alert(`Error: ${errorMsg}\n\nPlease check the browser console (F12) for more details.`);
         }
     }
     
