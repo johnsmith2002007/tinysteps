@@ -522,11 +522,11 @@ class AssignmentHelper {
         if (lowerInput.includes("don't know why") || lowerInput.includes("dont know why") || 
             lowerInput.includes("bother") || lowerInput.includes("bothers me")) {
             if (dobrowskiConfig && dobrowskiConfig.normalizeConflict && dobrowskiConfig.normalizeConflict.enabled) {
-                // "If it's bothering you this much, it probably matters to you. We don't have to figure out why yet."
+                // BELIEF & AGENCY: Acknowledge the meaning without trying to fix or resolve it
                 if (isLowCertainty) {
-                    return "If it's bothering you this much, it probably matters to you. We don't have to figure out why yet.";
+                    return "If it's bothering you this much, it probably matters to you.";
                 }
-                return "If it's bothering you this much, it probably matters to you. We don't have to figure out why yet.";
+                return "If it's bothering you this much, it probably matters to you.";
             }
         }
         
