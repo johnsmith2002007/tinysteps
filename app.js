@@ -986,7 +986,7 @@ class AssignmentHelper {
 
     checkInappropriateContent(input) {
         // Check if content filtering is enabled
-        if (!FRANK_CONFIG || !FRANK_CONFIG.rules || !FRANK_CONFIG.rules.filterInappropriateContent || !FRANK_CONFIG.rules.filterInappropriateContent.enabled) {
+        if (typeof FRANK_CONFIG === 'undefined' || !FRANK_CONFIG || !FRANK_CONFIG.rules || !FRANK_CONFIG.rules.filterInappropriateContent || !FRANK_CONFIG.rules.filterInappropriateContent.enabled) {
             return false;
         }
 
@@ -1022,7 +1022,9 @@ class AssignmentHelper {
         this.openModal();
         
         // Get the response message from config
-        const responseMessage = FRANK_CONFIG.rules.filterInappropriateContent.response.message;
+        const responseMessage = (FRANK_CONFIG && FRANK_CONFIG.rules && FRANK_CONFIG.rules.filterInappropriateContent && FRANK_CONFIG.rules.filterInappropriateContent.response) 
+            ? FRANK_CONFIG.rules.filterInappropriateContent.response.message 
+            : "I'm smart but not all knowing - some things are better left to asking a trusted adult.";
         
         // Display the response
         responseContent.innerHTML = `
@@ -1537,7 +1539,7 @@ class AssignmentHelper {
         
         // Also hide pause button for resilience help
         const pauseBtn = document.getElementById('pauseBtn');
-        if (pauseBtn && FRANK_CONFIG.display.pauseButtonOnlyForAssignments) {
+        if (pauseBtn && FRANK_CONFIG && FRANK_CONFIG.display && FRANK_CONFIG.display.pauseButtonOnlyForAssignments) {
             pauseBtn.style.display = 'none';
         }
 
