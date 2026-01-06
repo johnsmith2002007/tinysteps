@@ -111,6 +111,19 @@ class AssignmentHelper {
         return { type: 'ready_for_action', input: userInput };
     }
     
+    // Detect if user explicitly signals overwhelm/shutdown
+    detectsOverwhelmSignal(input) {
+        if (!input) return false;
+        const lowerInput = input.toLowerCase();
+        const overwhelmSignals = [
+            'i can\'t', 'i cannot', 'too much', 'too hard', 'i give up',
+            'this is too much', 'can\'t do this', 'cannot do this',
+            'shutdown', 'shut down', 'freeze', 'frozen', 'stuck', 'trapped',
+            'i\'m done', 'im done', 'can\'t handle', 'cannot handle'
+        ];
+        return overwhelmSignals.some(signal => lowerInput.includes(signal));
+    }
+    
     /*
      * CONVERSATION AND TONE RULES
      * 
