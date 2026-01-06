@@ -2206,7 +2206,11 @@ class AssignmentHelper {
 
     getSteps(assignment, type, includeRegulation = false) {
         if (type === 'resilience_help') {
-            return this.getResilienceSteps(assignment, includeRegulation);
+            // GUARDRAIL: Only include regulation if user explicitly signals overwhelm OR selected pause
+            const hasExplicitOverwhelm = this.detectsOverwhelmSignal(this.lastUserInput || '');
+            const userSelectedPause = this.conversationContext.length > 0 && 
+                                     this.conversationContext[this.conversationContext.length - 1]?.userSelectedPause;
+            return this.getResilienceSteps(assignment, includeRegulation && (hasExplicitOverwhelm || userSelectedPause));
         } else if (type === 'compare_contrast') {
             return this.getCompareContrastSteps(assignment);
         } else if (type === 'essay') {
