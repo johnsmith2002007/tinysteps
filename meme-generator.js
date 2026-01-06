@@ -15,21 +15,100 @@ class MemeGenerator {
 
     async loadSpongeBobGifs() {
         try {
-            // Search for SpongeBob memes on Giphy
-            const response = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${this.giphyApiKey}&q=spongebob+meme&limit=20&rating=g`);
+            // Use imgflip API (free, no key required for getting templates)
+            const response = await fetch('https://api.imgflip.com/get_memes');
             const data = await response.json();
             
-            if (data.data && data.data.length > 0) {
-                this.spongebobGifs = data.data;
-                this.populateTemplateSelect();
-            } else {
-                console.warn('No SpongeBob GIFs found');
-                this.showError('No SpongeBob memes found. Please try again later.');
+            if (data.success && data.data && data.data.memes) {
+                // Filter for SpongeBob memes
+                const spongebobMemes = data.data.memes.filter(meme => 
+                    meme.name.toLowerCase().includes('spongebob') || 
+                    meme.name.toLowerCase().includes('sponge')
+                );
+                
+                if (spongebobMemes.length > 0) {
+                    // Convert imgflip format to our expected format
+                    this.spongebobGifs = spongebobMemes.map(meme => ({
+                        title: meme.name,
+                        images: {
+                            fixed_height_still: { url: meme.url },
+                            original_still: { url: meme.url },
+                            fixed_height: { url: meme.url },
+                            original: { url: meme.url }
+                        }
+                    }));
+                    this.populateTemplateSelect();
+                    return;
+                }
             }
         } catch (error) {
-            console.error('Error loading SpongeBob GIFs:', error);
-            this.showError('Failed to load SpongeBob memes. Please check your connection.');
+            console.warn('imgflip API failed, using fallback templates:', error);
         }
+        
+        // Fallback: Use popular SpongeBob meme templates
+        this.loadFallbackTemplates();
+    }
+    
+    loadFallbackTemplates() {
+        // Popular SpongeBob meme templates (using imgflip direct URLs)
+        this.spongebobGifs = [
+            {
+                title: 'SpongeBob Mocking',
+                images: {
+                    fixed_height_still: { url: 'https://i.imgflip.com/1otk96.jpg' },
+                    original_still: { url: 'https://i.imgflip.com/1otk96.jpg' },
+                    fixed_height: { url: 'https://i.imgflip.com/1otk96.jpg' },
+                    original: { url: 'https://i.imgflip.com/1otk96.jpg' }
+                }
+            },
+            {
+                title: 'SpongeBob Ight Imma Head Out',
+                images: {
+                    fixed_height_still: { url: 'https://i.imgflip.com/39g1o.jpg' },
+                    original_still: { url: 'https://i.imgflip.com/39g1o.jpg' },
+                    fixed_height: { url: 'https://i.imgflip.com/39g1o.jpg' },
+                    original: { url: 'https://i.imgflip.com/39g1o.jpg' }
+                }
+            },
+            {
+                title: 'SpongeBob Handsome',
+                images: {
+                    fixed_height_still: { url: 'https://i.imgflip.com/1bhk.jpg' },
+                    original_still: { url: 'https://i.imgflip.com/1bhk.jpg' },
+                    fixed_height: { url: 'https://i.imgflip.com/1bhk.jpg' },
+                    original: { url: 'https://i.imgflip.com/1bhk.jpg' }
+                }
+            },
+            {
+                title: 'SpongeBob Imagination',
+                images: {
+                    fixed_height_still: { url: 'https://i.imgflip.com/1bgw.jpg' },
+                    original_still: { url: 'https://i.imgflip.com/1bgw.jpg' },
+                    fixed_height: { url: 'https://i.imgflip.com/1bgw.jpg' },
+                    original: { url: 'https://i.imgflip.com/1bgw.jpg' }
+                }
+            },
+            {
+                title: 'SpongeBob Drawn',
+                images: {
+                    fixed_height_still: { url: 'https://i.imgflip.com/1bij.jpg' },
+                    original_still: { url: 'https://i.imgflip.com/1bij.jpg' },
+                    fixed_height: { url: 'https://i.imgflip.com/1bij.jpg' },
+                    original: { url: 'https://i.imgflip.com/1bij.jpg' }
+                }
+            },
+            {
+                title: 'SpongeBob Surprised',
+                images: {
+                    fixed_height_still: { url: 'https://i.imgflip.com/1bh8.jpg' },
+                    original_still: { url: 'https://i.imgflip.com/1bh8.jpg' },
+                    fixed_height: { url: 'https://i.imgflip.com/1bh8.jpg' },
+                    original: { url: 'https://i.imgflip.com/1bh8.jpg' }
+                }
+            }
+        ];
+        
+        this.populateTemplateSelect();
     }
 
     populateTemplateSelect() {
