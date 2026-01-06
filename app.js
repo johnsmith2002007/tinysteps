@@ -1298,6 +1298,76 @@ class AssignmentHelper {
         return false;
     }
     
+    // Validate that response follows single mode rule
+    // Each mode has specific allowed elements:
+    // - LISTENING: message only (no question, no actions)
+    // - CLARIFYING: message + question only (no actions)
+    // - OFFERING_DIRECTION: message + actions only (no question)
+    // - CALMING: message + pause actions only (no question, no other actions)
+    // - STEPPING: steps/actions only (no question, no reassurance)
+    validateSingleMode(response) {
+        if (!response || !response.mode) {
+            return; // Can't validate without mode
+        }
+        
+        const mode = response.mode;
+        
+        // LISTENING mode: message only, no question, no actions
+        if (mode === MODES.LISTENING) {
+            if (response.question) {
+                console.warn('LISTENING mode should not have question - moving to CLARIFYING');
+                response.mode = MODES.CLARIFYING;
+            }
+            if (response.actions && response.actions.length > 0) {
+                console.warn('LISTENING mode should not have actions - removing');
+                response.actions = [];
+            }
+        }
+        
+        // CLARIFYING mode: message + question only, no actions
+        if (mode === MODES.CLARIFYING) {
+            if (response.actions && response.actions.length > 0) {
+                console.warn('CLARIFYING mode should not have actions - removing');
+                response.actions = [];
+            }
+        }
+        
+        // OFFERING_DIRECTION mode: message + actions only, no question
+        if (mode === MODES.OFFERING_DIRECTION || mode === MODES.SHRINKING) {
+            if (response.question) {
+                console.warn('OFFERING_DIRECTION mode should not have question - removing');
+                response.question = null;
+            }
+        }
+        
+        // CALMING mode: message + pause actions only, no question
+        if (mode === MODES.CALMING || mode === MODES.PAUSED) {
+            if (response.question) {
+                console.warn('CALMING mode should not have question - removing');
+                response.question = null;
+            }
+            // Only allow pause-related actions
+            if (response.actions && response.actions.length > 0) {
+                const pauseActions = response.actions.filter(action => 
+                    action.toLowerCase().includes('pause') || 
+                    action.toLowerCase().includes('come back') ||
+                    action.toLowerCase().includes('later'));
+                if (pauseActions.length !== response.actions.length) {
+                    console.warn('CALMING mode should only have pause actions - filtering');
+                    response.actions = pauseActions;
+                }
+            }
+        }
+        
+        // STEPPING mode: steps/actions only, no question, no reassurance
+        if (mode === MODES.STEPPING) {
+            if (response.question) {
+                console.warn('STEPPING mode should not have question - removing');
+                response.question = null;
+            }
+        }
+    }
+    
     // DEPRECATED: These functions replaced by mirrorAnswer, acknowledgeUnderstanding, offerDirectionalOptions
     // Keeping for backward compatibility but should not be used
     acknowledgeAnswer(userInput, certaintyLevel) {
