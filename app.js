@@ -556,31 +556,49 @@ class AssignmentHelper {
             
             // Use canonical response flow: classify, then respond once in one mode
             console.log('Building context...');
-            const context = this.buildContext(input);
-            console.log('Context built:', context);
+            let context;
+            try {
+                context = this.buildContext(input);
+                console.log('Context built:', context);
+            } catch (error) {
+                console.error('Error in buildContext:', error);
+                throw new Error('Failed to build context: ' + error.message);
+            }
             
             console.log('Generating response...');
-            const response = this.generateFrankResponse(input, context);
-            console.log('Response generated:', response);
+            let response;
+            try {
+                response = this.generateFrankResponse(input, context);
+                console.log('Response generated:', response);
+            } catch (error) {
+                console.error('Error in generateFrankResponse:', error);
+                throw new Error('Failed to generate response: ' + error.message);
+            }
+            
+            // Validate response structure
+            if (!response || !response.mode) {
+                console.error('Invalid response structure:', response);
+                throw new Error('Invalid response structure - missing mode');
+            }
             
             // Set mode from response
             this.setConversationMode(response.mode);
             
             // Display the response based on mode
             console.log('Displaying response...');
-            this.displayCanonicalResponse(response, input);
-            console.log('Response displayed successfully');
+            try {
+                this.displayCanonicalResponse(response, input);
+                console.log('Response displayed successfully');
+            } catch (error) {
+                console.error('Error in displayCanonicalResponse:', error);
+                throw new Error('Failed to display response: ' + error.message);
+            }
         } catch (error) {
             console.error('Error processing assignment:', error);
             console.error('Error stack:', error.stack);
-            console.error('Error details:', {
-                message: error.message,
-                name: error.name,
-                stack: error.stack
-            });
-            // Show more helpful error message
+            // Show more helpful error message with full details
             const errorMsg = error.message || 'Unknown error';
-            alert(`Error: ${errorMsg}\n\nPlease check the browser console (F12) for more details.`);
+            alert(`Error: ${errorMsg}\n\nStack: ${error.stack ? error.stack.substring(0, 200) : 'No stack trace'}\n\nPlease check the browser console (F12) for full details.`);
         }
     }
     
@@ -674,7 +692,12 @@ class AssignmentHelper {
         
         // Set up input area if in listening/clarifying mode
         if (response.mode === MODES.LISTENING || response.mode === MODES.CLARIFYING) {
-            this.setupQuestionInput(response.mode);
+            try {
+                this.setupQuestionInput(response.mode);
+            } catch (error) {
+                console.error('Error setting up question input:', error);
+                // Don't throw - just log, the response is already displayed
+            }
         }
         
         // Set up action button handlers
