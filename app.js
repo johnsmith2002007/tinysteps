@@ -251,24 +251,51 @@ class AssignmentHelper {
             timestamp: Date.now()
         });
         
-        // ANTI-QUESTION-CHAINING: Check if user is answering a previous question
-        const isAnsweringQuestion = this.isAnsweringPreviousQuestion(userInput, context);
+        // STATE MACHINE: After Frank asks a question, next input is assumed to be an answer
+        // UNLESS it clearly introduces a new topic
+        const introducesNewTopic = this.introducesNewTopic(userInput, context);
+        const wasInClarifyingMode = this.conversationMode === MODES.CLARIFYING;
+        const hadPreviousQuestion = this.conversationContext.length > 0 && 
+                                   this.conversationContext[this.conversationContext.length - 1]?.hadQuestion;
         
-        // If user answered a question, suppress further questions and offer direction instead
-        if (isAnsweringQuestion) {
+        // If we were in CLARIFYING mode and user input doesn't introduce new topic, treat as answer
+        if (wasInClarifyingMode && !introducesNewTopic && hadPreviousQuestion) {
+            return this.handleQuestionAnswer(userInput, signal, certaintyLevel, context);
+        }
+        
+        // Also check semantic answer detection (for cases where mode wasn't set correctly)
+        const isAnsweringQuestion = this.isAnsweringPreviousQuestion(userInput, context);
+        if (isAnsweringQuestion && !introducesNewTopic) {
             return this.handleQuestionAnswer(userInput, signal, certaintyLevel, context);
         }
         
         switch (signal.type) {
             case 'emotional':
+                // STATE MACHINE: Only ask question if NOT in CLARIFYING mode (not answering previous question)
+                // If in CLARIFYING mode, this was already handled above
+                if (this.conversationMode === MODES.CLARIFYING) {
+                    // Should have been caught above, but fallback: treat as answer
+                    return this.handleQuestionAnswer(userInput, signal, certaintyLevel, context);
+                }
+                
                 // PROPORTIONALITY: Emotional input gets reflection + one question, no actions
                 // CERTAINTY: Match language to user's certainty level
-                return {
+                const emotionalQuestion = this.askOneClarifyingQuestion(userInput, certaintyLevel);
+                const emotionalResponse = {
                     mode: MODES.LISTENING,
                     message: this.mirrorEmotion(userInput, certaintyLevel),
-                    question: this.askOneClarifyingQuestion(userInput, certaintyLevel),
+                    question: emotionalQuestion,
                     actions: []
                 };
+                // Track that we asked a question
+                if (this.conversationContext.length > 0) {
+                    const lastContext = this.conversationContext[this.conversationContext.length - 1];
+                    if (lastContext) {
+                        lastContext.hadQuestion = true;
+                        lastContext.lastQuestion = emotionalQuestion;
+                    }
+                }
+                return emotionalResponse;
                 
             case 'explanatory':
                 // ANTI-QUESTION-CHAINING: If we're already in CLARIFYING mode, user is answering
@@ -888,34 +915,76 @@ class AssignmentHelper {
         return uncertaintyCount === 0;
     }
     
-    // ANTI-QUESTION-CHAINING: Handle when user answers a question
-    // Acknowledge answer, demonstrate understanding, offer direction (not another question)
+    // STATE MACHINE: Handle when user answers a question
+    // After answer: mirror, acknowledge understanding, offer direction (no questions, no reframing, no regulation)
     handleQuestionAnswer(userInput, signal, certaintyLevel, context) {
         const lowerInput = userInput.toLowerCase();
         
-        // Acknowledge using user's language
-        let acknowledgment = this.acknowledgeAnswer(userInput, certaintyLevel);
+        // 1. Mirror the user's answer using their language
+        const mirror = this.mirrorAnswer(userInput, certaintyLevel);
         
-        // Demonstrate understanding of how this refines the problem
-        let understanding = this.demonstrateUnderstanding(userInput, signal);
+        // 2. Briefly acknowledge understanding
+        const understanding = this.acknowledgeUnderstanding(userInput, signal);
         
-        // Offer direction choices (not questions)
-        const directionChoices = this.offerDirectionChoices(userInput, signal);
+        // 3. Offer 2-3 directional options as buttons/statements (actions/paths, not inquiries)
+        const directionChoices = this.offerDirectionalOptions(userInput, signal);
+        
+        // Internal understanding state: transition out of CLARIFYING, move toward action
+        // Use SHRINKING or STEPPING as visible mode (UNDERSTANDING is internal guardrail)
+        const nextMode = this.determineNextModeAfterAnswer(userInput, signal);
         
         return {
-            mode: MODES.UNDERSTANDING,
-            message: acknowledgment + (understanding ? " " + understanding : ""),
+            mode: nextMode, // Visible mode (not UNDERSTANDING - that's internal)
+            message: mirror + (understanding ? " " + understanding : ""),
             question: null, // NO QUESTION - user already answered
-            actions: directionChoices
+            actions: directionChoices,
+            _internalState: 'understanding' // Internal guardrail flag
         };
     }
     
-    // Acknowledge the answer using user's language
-    acknowledgeAnswer(userInput, certaintyLevel) {
+    // Detect if input introduces a new topic (vs answering previous question)
+    introducesNewTopic(userInput, context) {
+        // If no previous context, can't be a new topic
+        if (this.conversationContext.length === 0) {
+            return false;
+        }
+        
+        const lowerInput = userInput.toLowerCase();
+        
+        // New topic indicators: completely different subject matter
+        const newTopicIndicators = [
+            // Assignment keywords (new assignment topic)
+            /^(help me|i need|can you|show me|how do i|how to)/i,
+            // Completely different subject
+            /^(actually|wait|hold on|never mind|forget it|different)/i,
+            // New question from user
+            /\?$/,
+            // Long exploratory input (probably new topic)
+            userInput.trim().split(/\s+/).length > 20
+        ];
+        
+        // Check if input matches new topic patterns
+        if (newTopicIndicators.some(pattern => {
+            if (typeof pattern === 'boolean') return pattern;
+            return pattern.test(userInput);
+        })) {
+            return true;
+        }
+        
+        // Check if input is asking a question (new topic, not answer)
+        if (lowerInput.match(/^(what|why|how|when|where|who|which|can|could|should|would)/)) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // Mirror the user's answer using their language (not interpretation)
+    mirrorAnswer(userInput, certaintyLevel) {
         const lowerInput = userInput.toLowerCase();
         const isLowCertainty = certaintyLevel === 'low';
         
-        // Use mirroring to acknowledge
+        // Use user's exact language when possible
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant") ||
             lowerInput.includes("irrelevant")) {
             if (isLowCertainty) {
@@ -932,58 +1001,143 @@ class AssignmentHelper {
             return "This feels like a lot right now.";
         }
         
-        // Default: reflect back what they said
+        if (lowerInput.includes("don't get") || lowerInput.includes("dont get") || 
+            lowerInput.includes("don't understand") || lowerInput.includes("dont understand")) {
+            return "Not understanding why you need to do something makes it harder to care.";
+        }
+        
+        if (lowerInput.includes("bad at") || lowerInput.includes("not good at")) {
+            return "Feeling like you're not good at something makes it harder to start.";
+        }
+        
+        // Default: reflect back using their language
         return "I hear you.";
     }
     
-    // Demonstrate understanding of how this refines the problem
-    demonstrateUnderstanding(userInput, signal) {
+    // Briefly acknowledge understanding (not reframing, not regulation)
+    acknowledgeUnderstanding(userInput, signal) {
         const lowerInput = userInput.toLowerCase();
         
-        // Show we understand what they're saying
-        if (lowerInput.includes("irrelevant") || lowerInput.includes("doesn't matter") || 
-            lowerInput.includes("doesnt matter") || lowerInput.includes("pointless")) {
+        // Simple acknowledgment that we understand, no interpretation
+        if (lowerInput.includes("irrelevant") || lowerInput.includes("pointless") || 
+            lowerInput.includes("boring")) {
             return "We can go a few ways from here.";
         }
         
         if (lowerInput.includes("hard") || lowerInput.includes("difficult") || 
-            lowerInput.includes("stuck") || lowerInput.includes("overwhelmed")) {
+            lowerInput.includes("stuck")) {
             return "We can work with this.";
         }
         
-        // Default: show we're moving forward
-        return null;
+        // Default: brief acknowledgment
+        return null; // Keep it minimal
     }
     
-    // Offer direction choices (buttons, not questions)
-    offerDirectionChoices(userInput, signal) {
+    // Offer 2-3 directional options as buttons/statements (actions/paths, not inquiries)
+    offerDirectionalOptions(userInput, signal) {
         const lowerInput = userInput.toLowerCase();
-        const choices = [];
+        const options = [];
         
-        // If user mentioned irrelevance/pointlessness, offer to explore or minimize
+        // If user mentioned irrelevance/pointlessness, offer paths
         if (lowerInput.includes("irrelevant") || lowerInput.includes("doesn't matter") || 
             lowerInput.includes("doesnt matter") || lowerInput.includes("pointless") ||
             lowerInput.includes("boring")) {
-            choices.push("Want to talk through why it feels pointless?");
-            choices.push("Want help getting through just the minimum?");
-            choices.push("Pause for now");
-            return choices;
+            options.push("Talk through why it feels pointless");
+            options.push("Help get through just the minimum");
+            options.push("Pause for now");
+            return options;
         }
         
-        // If user mentioned difficulty/hard, offer to break down or pause
+        // If user mentioned difficulty/hard, offer paths
         if (lowerInput.includes("hard") || lowerInput.includes("difficult") || 
             lowerInput.includes("stuck") || lowerInput.includes("overwhelmed")) {
-            choices.push("Want to make this smaller?");
-            choices.push("Want to talk through what's hard?");
-            choices.push("Pause for now");
-            return choices;
+            options.push("Make this smaller");
+            options.push("Talk through what's hard");
+            options.push("Pause for now");
+            return options;
         }
         
-        // Default direction choices
-        choices.push("Want to keep exploring?");
-        choices.push("Want to make this smaller?");
-        choices.push("Pause for now");
-        return choices;
+        // If user mentioned not understanding/getting it
+        if (lowerInput.includes("don't get") || lowerInput.includes("dont get") || 
+            lowerInput.includes("don't understand") || lowerInput.includes("dont understand")) {
+            options.push("Help explain this to your teacher");
+            options.push("Break this down differently");
+            options.push("Pause for now");
+            return options;
+        }
+        
+        // Default directional options (actions, not questions)
+        options.push("Keep exploring");
+        options.push("Make this smaller");
+        options.push("Pause for now");
+        return options;
+    }
+    
+    // Determine next visible mode after answer (UNDERSTANDING is internal, not visible)
+    determineNextModeAfterAnswer(userInput, signal) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // If user wants to shrink, go to SHRINKING
+        if (lowerInput.includes("smaller") || lowerInput.includes("break down") || 
+            lowerInput.includes("simpler")) {
+            return MODES.SHRINKING;
+        }
+        
+        // If user is ready for action, go to STEPPING
+        if (signal.type === 'ready_for_action' || 
+            lowerInput.includes("help") || lowerInput.includes("show me") || 
+            lowerInput.includes("how do")) {
+            return MODES.STEPPING;
+        }
+        
+        // Default: SHRINKING (offers direction without being too action-oriented)
+        return MODES.SHRINKING;
+    }
+    
+    // Check if there's unresolved ambiguity (only then ask another question)
+    hasUnresolvedAmbiguity(userInput, signal) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // If input is very vague or uncertain, there's ambiguity
+        const vagueIndicators = [
+            'i don\'t know', 'i dont know', 'not sure', 'unsure', 'uncertain',
+            'maybe', 'perhaps', 'might', 'could be', 'possibly',
+            'i think', 'i guess', 'i suppose', 'i wonder'
+        ];
+        
+        const vagueCount = vagueIndicators.filter(indicator => lowerInput.includes(indicator)).length;
+        if (vagueCount > 1) {
+            return true; // Too vague, needs clarification
+        }
+        
+        // If input is very short and doesn't provide context, there's ambiguity
+        if (userInput.trim().split(/\s+/).length <= 3 && vagueCount > 0) {
+            return true;
+        }
+        
+        // If input introduces new uncertainty (not resolving previous question)
+        if (lowerInput.includes('but') || lowerInput.includes('however') || 
+            lowerInput.includes('although') || lowerInput.includes('except')) {
+            // Might be introducing new complexity
+            return true;
+        }
+        
+        // Default: if input is declarative and specific, ambiguity is resolved
+        return false;
+    }
+    
+    // DEPRECATED: These functions replaced by mirrorAnswer, acknowledgeUnderstanding, offerDirectionalOptions
+    // Keeping for backward compatibility but should not be used
+    acknowledgeAnswer(userInput, certaintyLevel) {
+        return this.mirrorAnswer(userInput, certaintyLevel);
+    }
+    
+    demonstrateUnderstanding(userInput, signal) {
+        return this.acknowledgeUnderstanding(userInput, signal);
+    }
+    
+    offerDirectionChoices(userInput, signal) {
+        return this.offerDirectionalOptions(userInput, signal);
     }
     
     // Permission-based transition to shrinking
