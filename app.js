@@ -1102,18 +1102,17 @@ class AssignmentHelper {
     getPersonaMessage(assignment, type) {
         // Feature Set 6: Use approved emotional acknowledgment language from config
         // Safety check for FRANK_CONFIG
+        let resilienceMessages;
         if (typeof FRANK_CONFIG === 'undefined' || !FRANK_CONFIG.personality || !FRANK_CONFIG.personality.emotionalAcknowledgment) {
             console.warn('FRANK_CONFIG not available, using fallback messages');
-            const fallbackMessages = [
+            resilienceMessages = [
                 "This kind of assignment can feel heavy.",
                 "A lot of people get stuck here.",
                 "You're not behind.",
                 "This looks like a lot."
             ];
-            const resilienceMessages = fallbackMessages;
         } else {
-            const approvedMessages = FRANK_CONFIG.personality.emotionalAcknowledgment.canSay;
-            var resilienceMessages = approvedMessages;
+            resilienceMessages = FRANK_CONFIG.personality.emotionalAcknowledgment.canSay;
         }
         
         const messages = {
