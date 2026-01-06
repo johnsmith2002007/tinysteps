@@ -35,9 +35,54 @@ class AssignmentHelper {
         }
     }
     
+    /**
+     * Detect certainty level from user input
+     * CERTAINTY RULES: Match confidence to user's certainty level
+     * - Low: tentative language, exploration ("I think", "maybe", "it feels like")
+     * - High: absolute statements, strong emotions ("I hate", "this is pointless", "I can't")
+     * - Medium: default for neutral statements
+     */
+    detectCertaintyLevel(userInput) {
+        if (!userInput) return 'medium';
+        
+        const lowerInput = userInput.toLowerCase();
+        
+        // High certainty markers: absolute statements, strong emotions, definitive language
+        const highCertaintyMarkers = [
+            'i hate', 'i love', 'this is', 'that is', 'it is', 'always', 'never',
+            'impossible', 'can\'t', 'cannot', 'won\'t', 'will not', 'definitely',
+            'absolutely', 'completely', 'totally', 'pointless', 'useless', 'waste',
+            'i can\'t', 'i cannot', 'i give up', 'i\'m done', 'im done'
+        ];
+        
+        // Low certainty markers: tentative, exploratory, uncertain language
+        const lowCertaintyMarkers = [
+            'i think', 'maybe', 'perhaps', 'might', 'could be', 'it feels like',
+            'it seems like', 'i\'m not sure', 'im not sure', 'i guess', 'i suppose',
+            'sort of', 'kind of', 'a little', 'a bit', 'somewhat', 'possibly',
+            'i wonder', 'not really sure', 'not sure', 'unsure', 'uncertain'
+        ];
+        
+        // Check for high certainty first (stronger signal)
+        if (highCertaintyMarkers.some(marker => lowerInput.includes(marker))) {
+            return 'high';
+        }
+        
+        // Check for low certainty
+        if (lowCertaintyMarkers.some(marker => lowerInput.includes(marker))) {
+            return 'low';
+        }
+        
+        // Default to medium for neutral statements
+        return 'medium';
+    }
+    
     // Classify user input into signal types
     classifyInput(userInput) {
         const lowerInput = userInput.toLowerCase();
+        
+        // Detect certainty level for proportional response matching
+        const certaintyLevel = this.detectCertaintyLevel(userInput);
         
         // Check for overwhelmed signal first (highest priority)
         const overwhelmSignals = [
@@ -47,7 +92,7 @@ class AssignmentHelper {
             'i\'m done', 'im done', 'can\'t handle', 'cannot handle'
         ];
         if (overwhelmSignals.some(signal => lowerInput.includes(signal))) {
-            return { type: 'overwhelmed', input: userInput };
+            return { type: 'overwhelmed', input: userInput, certaintyLevel };
         }
         
         // Check for request to shrink
@@ -56,7 +101,7 @@ class AssignmentHelper {
             'smaller steps', 'tiny step', 'one step', 'simpler'
         ];
         if (shrinkSignals.some(signal => lowerInput.includes(signal))) {
-            return { type: 'request_to_shrink', input: userInput };
+            return { type: 'request_to_shrink', input: userInput, certaintyLevel };
         }
         
         // IMPORTANT: If we're already in CLARIFYING mode and user responds, they've clarified
@@ -64,7 +109,7 @@ class AssignmentHelper {
         if (this.conversationMode === MODES.CLARIFYING) {
             // User has answered the clarifying question - they're ready for action
             if (userInput.trim().length > 0) {
-                return { type: 'ready_for_action', input: userInput };
+                return { type: 'ready_for_action', input: userInput, certaintyLevel };
             }
         }
         
@@ -86,7 +131,7 @@ class AssignmentHelper {
                 /irrelevant/i
             ];
             if (explanatoryPatterns.some(pattern => pattern.test(userInput))) {
-                return { type: 'explanatory', input: userInput };
+                return { type: 'explanatory', input: userInput, certaintyLevel };
             }
         }
         
@@ -98,7 +143,7 @@ class AssignmentHelper {
             'impossible', 'too much', 'too hard'
         ];
         if (emotionalKeywords.some(keyword => lowerInput.includes(keyword))) {
-            return { type: 'emotional', input: userInput };
+            return { type: 'emotional', input: userInput, certaintyLevel };
         }
         
         // Check for action-oriented (assignment) input
@@ -110,15 +155,15 @@ class AssignmentHelper {
             'break down', 'steps', 'guide', 'walk me through'
         ];
         if (assignmentKeywords.some(keyword => lowerInput.includes(keyword))) {
-            return { type: 'ready_for_action', input: userInput };
+            return { type: 'ready_for_action', input: userInput, certaintyLevel };
         }
         
         // Default: treat as emotional if short, otherwise as ready for action
         if (userInput.split(' ').length < 10) {
-            return { type: 'emotional', input: userInput };
+            return { type: 'emotional', input: userInput, certaintyLevel };
         }
         
-        return { type: 'ready_for_action', input: userInput };
+        return { type: 'ready_for_action', input: userInput, certaintyLevel };
     }
     
     // Detect if user explicitly signals overwhelm/shutdown
@@ -156,12 +201,46 @@ class AssignmentHelper {
      * ACTION BUTTONS:
      * - Must be contextual to the last user input
      * - Do not show "Make this smaller" or "Start this step" unless the user has indicated readiness
+     * 
+     * CERTAINTY AND PROPORTIONALITY RULES:
+     * 
+     * 1. DEGREE OF CERTAINTY MATCHING:
+     *    - Low certainty input ("I think", "maybe", "it feels like") → tentative language ("might", "could be")
+     *    - High certainty input ("I hate", "this is pointless") → direct acknowledgment, no challenging
+     *    - Never assume more certainty than user provides
+     * 
+     * 2. COMMON SENSE REASONING:
+     *    - Don't escalate support beyond what situation calls for (no grounding for mild frustration)
+     *    - Don't introduce new problem framings user didn't imply (don't turn "irrelevant" into stress management)
+     *    - Prefer simplest plausible interpretation of user intent
+     *    - If human friend would say "yeah, that makes sense" before helping, Frank should too
+     * 
+     * 3. PROPORTIONAL RESPONSE:
+     *    - Mild annoyance → simple reflection
+     *    - Confusion → clarification
+     *    - Explicit overwhelm → reassurance + pause (nothing more)
+     *    - Readiness → action
+     *    - Never stack: reassurance + instruction + regulation in same turn
+     * 
+     * 4. LANGUAGE CONSTRAINTS:
+     *    - Avoid absolute claims unless user used absolute language
+     *    - Avoid "solutions" before understanding the problem
+     *    - Prefer mirrors over interpretations
      */
     
     // Canonical response flow
+    // PROPORTIONALITY RULE: Response intensity must match user's emotional/cognitive load
+    // - Mild annoyance → simple reflection
+    // - Confusion → clarification
+    // - Explicit overwhelm → reassurance + pause
+    // - Readiness → action
+    // Never stack: reassurance + instruction + regulation in same turn
     generateFrankResponse(userInput, context = {}) {
         const signal = this.classifyInput(userInput);
         this.lastUserInput = userInput;
+        
+        // Extract certainty level for proportional response matching
+        const certaintyLevel = signal.certaintyLevel || 'medium';
         
         // Ensure conversationContext is initialized (safety check)
         if (!Array.isArray(this.conversationContext)) {
@@ -172,27 +251,34 @@ class AssignmentHelper {
         this.conversationContext.push({
             input: userInput,
             signal: signal.type,
+            certaintyLevel: certaintyLevel,
             timestamp: Date.now()
         });
         
         switch (signal.type) {
             case 'emotional':
+                // PROPORTIONALITY: Emotional input gets reflection + one question, no actions
+                // CERTAINTY: Match language to user's certainty level
                 return {
                     mode: MODES.LISTENING,
-                    message: this.mirrorEmotion(userInput),
-                    question: this.askOneClarifyingQuestion(userInput),
+                    message: this.mirrorEmotion(userInput, certaintyLevel),
+                    question: this.askOneClarifyingQuestion(userInput, certaintyLevel),
                     actions: []
                 };
                 
             case 'explanatory':
+                // PROPORTIONALITY: Explanatory input gets meaning reflection + narrowing question
+                // COMMON SENSE: Don't escalate - user is explaining, not asking for solutions
                 return {
                     mode: MODES.CLARIFYING,
-                    message: this.reflectMeaning(userInput),
-                    question: this.narrowChoices(userInput),
+                    message: this.reflectMeaning(userInput, certaintyLevel),
+                    question: this.narrowChoices(userInput, certaintyLevel),
                     actions: []
                 };
                 
             case 'overwhelmed':
+                // PROPORTIONALITY: Explicit overwhelm gets reassurance + pause option
+                // No additional instruction or regulation - just pause permission
                 return {
                     mode: MODES.PAUSED,
                     message: this.gentleReassurance(),
@@ -200,6 +286,7 @@ class AssignmentHelper {
                 };
                 
             case 'request_to_shrink':
+                // PROPORTIONALITY: User requested shrinking - offer transition, no escalation
                 return {
                     mode: MODES.SHRINKING,
                     message: this.permissionBasedTransition(),
@@ -207,10 +294,8 @@ class AssignmentHelper {
                 };
                 
             case 'ready_for_action':
-                // Only show action buttons if user has explicitly indicated readiness
-                // User indicates readiness by:
-                // 1. Going through clarification/shrinking modes first, OR
-                // 2. Directly asking for help with an assignment (action-oriented input)
+                // PROPORTIONALITY: Only show actions if user has indicated readiness
+                // COMMON SENSE: Don't assume readiness - wait for explicit signal
                 const hasIndicatedReadiness = context.currentMode === MODES.CLARIFYING || 
                                              context.currentMode === MODES.SHRINKING ||
                                              this.conversationContext.length > 1 ||
@@ -226,11 +311,11 @@ class AssignmentHelper {
                 };
                 
             default:
-                // Fallback to emotional
+                // Fallback to emotional with medium certainty
                 return {
                     mode: MODES.LISTENING,
-                    message: this.mirrorEmotion(userInput),
-                    question: this.askOneClarifyingQuestion(userInput),
+                    message: this.mirrorEmotion(userInput, 'medium'),
+                    question: this.askOneClarifyingQuestion(userInput, 'medium'),
                     actions: []
                 };
         }
@@ -254,117 +339,200 @@ class AssignmentHelper {
     }
     
     // Mirror emotion using user's language
-    mirrorEmotion(userInput) {
+    // CERTAINTY MATCHING: Use tentative language for low certainty, direct for high
+    // LANGUAGE CONSTRAINT: Prefer mirrors over interpretations, avoid absolute claims
+    mirrorEmotion(userInput, certaintyLevel = 'medium') {
         const lowerInput = userInput.toLowerCase();
         
+        // High certainty: direct acknowledgment, no reframing
+        // Low certainty: tentative language, hypotheses not conclusions
+        const isLowCertainty = certaintyLevel === 'low';
+        const isHighCertainty = certaintyLevel === 'high';
+        
         if (lowerInput.includes("hate")) {
+            // High certainty emotion - acknowledge directly, don't challenge
+            if (isLowCertainty) {
+                return "It sounds like this might feel really hard.";
+            }
             return "That sounds really hard.";
         }
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            // Mirror user's language, avoid interpreting cause
+            if (isLowCertainty) {
+                return "If something feels like it might not be relevant, that can make it harder to care.";
+            }
             return "If something feels pointless, it's way harder to care.";
         }
         
         if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
+            // Simple reflection, no escalation
+            if (isLowCertainty) {
+                return "When something doesn't feel meaningful, it can be hard to engage with it.";
+            }
             return "When something doesn't feel meaningful, it's hard to engage with it.";
         }
         
         if (lowerInput.includes("difficult") || lowerInput.includes("hard")) {
+            // Proportional: mild difficulty gets mild response
+            if (isLowCertainty) {
+                return "This might feel like a lot right now.";
+            }
             return "This feels like a lot right now.";
         }
         
         if (lowerInput.includes("overwhelmed") || lowerInput.includes("too much")) {
+            // Only use if user explicitly says overwhelmed (proportionality rule)
             return "This looks like a lot.";
         }
         
-        // Default mirror
+        // Default mirror - match certainty level
+        if (isLowCertainty) {
+            return "I hear you.";
+        }
         return "I hear you.";
     }
     
     // Ask one clarifying question based on input (metacognitive approach)
-    // Helps users develop declarative knowledge (knowing what they're struggling with)
-    askOneClarifyingQuestion(userInput) {
+    // CERTAINTY MATCHING: Low certainty → ask before acting, offer hypotheses
+    // COMMON SENSE: Don't introduce new problem framings user didn't imply
+    askOneClarifyingQuestion(userInput, certaintyLevel = 'medium') {
         const lowerInput = userInput.toLowerCase();
+        const isLowCertainty = certaintyLevel === 'low';
         
         if (lowerInput.includes('hate')) {
             // Metacognitive: Help identify what specifically is causing difficulty
+            // High certainty emotion - direct question
+            if (isLowCertainty) {
+                return "What about it might feel the worst right now?";
+            }
             return "What about it feels the worst right now?";
         }
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
             // Metacognitive: Help understand their own learning needs (conditional knowledge)
+            // COMMON SENSE: Don't turn this into stress management - stay with relevance issue
+            if (isLowCertainty) {
+                return "Could it be that it doesn't connect to your life, or maybe you don't see why you're being asked to do it?";
+            }
             return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
         }
         
         if (lowerInput.includes('boring') || lowerInput.includes('pointless')) {
             // Metacognitive: Help identify what would make learning meaningful
+            // Simple question, no escalation
+            if (isLowCertainty) {
+                return "What might be missing that would make it feel more meaningful?";
+            }
             return "What's missing that would make it feel meaningful?";
         }
         
         if (lowerInput.includes('difficult') || lowerInput.includes('hard')) {
             // Metacognitive: Help identify specific cognitive challenges
+            // Proportional: confusion gets clarification, not solutions
+            if (isLowCertainty) {
+                return "What part might feel the hardest?";
+            }
             return "What part feels the hardest?";
         }
         
         if (lowerInput.includes('overwhelmed') || lowerInput.includes('too much')) {
             // Metacognitive: Help monitor their cognitive load
+            // Only ask if user explicitly signals overwhelm (proportionality)
             return "What feels like too much?";
         }
         
-        // Default clarifying question - metacognitive prompt
+        // Default clarifying question - match certainty level
+        if (isLowCertainty) {
+            return "What might be bothering you about this?";
+        }
         return "What's bothering you about this?";
     }
     
     // Reflect meaning of explanatory input (metacognitive awareness)
-    // Helps users understand their own cognitive processes
-    reflectMeaning(userInput) {
+    // CERTAINTY MATCHING: Match language to user's certainty
+    // COMMON SENSE: Simple reflection, no escalation or new problem framings
+    // LANGUAGE CONSTRAINT: Prefer mirrors over interpretations
+    reflectMeaning(userInput, certaintyLevel = 'medium') {
         const lowerInput = userInput.toLowerCase();
+        const isLowCertainty = certaintyLevel === 'low';
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
             // Metacognitive: Acknowledge the impact on learning motivation
+            // Mirror user's language, don't interpret cause
+            if (isLowCertainty) {
+                return "If something feels like it might not be relevant, that can make it harder to care.";
+            }
             return "If something feels pointless, it's way harder to care.";
         }
         
         if (lowerInput.includes("doesn't connect") || lowerInput.includes("doesnt connect")) {
             // Metacognitive: Help understand why connection matters for learning
+            // Simple reflection, no escalation
+            if (isLowCertainty) {
+                return "When something doesn't seem to connect to your life, it can be hard to see why it matters.";
+            }
             return "When something doesn't connect to your life, it's hard to see why it matters.";
         }
         
         if (lowerInput.includes("because")) {
             // Metacognitive: Validate their self-awareness about their thinking
+            // Acknowledge without adding interpretation
             return "I hear what you're saying.";
         }
         
-        // Default reflection - metacognitive acknowledgment
+        // Default reflection - match certainty level
+        if (isLowCertainty) {
+            return "That makes sense.";
+        }
         return "That makes sense.";
     }
     
     // Narrow choices for explanatory input (metacognitive: help user understand their own learning needs)
-    narrowChoices(userInput) {
+    // CERTAINTY MATCHING: Low certainty → tentative questions, hypotheses
+    // COMMON SENSE: Simplest plausible interpretation, don't introduce new framings
+    // PROPORTIONALITY: Clarification only, no solutions or escalation
+    narrowChoices(userInput, certaintyLevel = 'medium') {
         const lowerInput = userInput.toLowerCase();
+        const isLowCertainty = certaintyLevel === 'low';
         
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant") ||
             lowerInput.includes("doesn't connect") || lowerInput.includes("doesnt connect")) {
             // Metacognitive: Help user identify what they need for learning (conditional knowledge)
-            return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it? Understanding what's blocking you helps you figure out what approach might work better.";
+            // COMMON SENSE: Stay with relevance issue, don't turn into stress management
+            if (isLowCertainty) {
+                return "Could it be that it doesn't connect to your life, or maybe you don't see why you're being asked to do it?";
+            }
+            return "Is the problem more that it doesn't connect to your life, or you don't see why you're being asked to do it?";
         }
         
         if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
             // Metacognitive: Help user identify what would make learning meaningful
-            return "What would need to change for it to feel more engaging? Knowing what would help you engage is useful information for how to approach this.";
+            // Simple question, no escalation
+            if (isLowCertainty) {
+                return "What might need to change for it to feel more engaging?";
+            }
+            return "What would need to change for it to feel more engaging?";
         }
         
-        // Default narrowing question - metacognitive prompt
-        return "Tell me more about that. The more you understand what's happening for you, the easier it is to find what works.";
+        // Default narrowing question - match certainty level
+        if (isLowCertainty) {
+            return "Tell me more about that.";
+        }
+        return "Tell me more about that.";
     }
     
     // Gentle reassurance for overwhelmed state (only used when user explicitly signals overwhelm)
+    // PROPORTIONALITY: Explicit overwhelm gets pause permission, nothing more
+    // COMMON SENSE: Don't escalate - user said they're overwhelmed, respect that
     gentleReassurance() {
         // Permission-based statement, no generic reassurance
+        // No additional instruction or regulation - just pause permission
         return "You can pause whenever you need to.";
     }
     
     // Permission-based transition to shrinking
+    // PROPORTIONALITY: User requested shrinking - simple transition, no escalation
     permissionBasedTransition() {
         return "Want to keep going, or should we make this into one tiny step?";
     }
@@ -464,25 +632,42 @@ class AssignmentHelper {
     }
     
     // Create paraphrase mirror using user's own language
+    // CERTAINTY MATCHING: Match language to user's certainty level
+    // LANGUAGE CONSTRAINT: Prefer mirrors over interpretations, avoid absolute claims
     createParaphraseMirror(userInput) {
         // Extract key phrases from user input and reflect them back
         // This replaces generic acknowledgements like "Thanks" or "Here's a good place to start"
         const lowerInput = userInput.toLowerCase();
+        const certaintyLevel = this.detectCertaintyLevel(userInput);
+        const isLowCertainty = certaintyLevel === 'low';
         
         // Look for specific phrases to mirror
         if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant")) {
+            if (isLowCertainty) {
+                return "If something feels like it might not be relevant, that can make it harder to care.";
+            }
             return "If something feels pointless, it's way harder to care.";
         }
         
         if (lowerInput.includes("hate")) {
+            // High certainty emotion - acknowledge directly
+            if (isLowCertainty) {
+                return "It sounds like this might feel really hard.";
+            }
             return "That sounds really hard.";
         }
         
         if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
+            if (isLowCertainty) {
+                return "When something doesn't feel meaningful, it can be hard to engage with it.";
+            }
             return "When something doesn't feel meaningful, it's hard to engage with it.";
         }
         
         if (lowerInput.includes("difficult") || lowerInput.includes("hard")) {
+            if (isLowCertainty) {
+                return "This might feel like a lot right now.";
+            }
             return "This feels like a lot right now.";
         }
         
