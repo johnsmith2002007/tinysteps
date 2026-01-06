@@ -167,10 +167,45 @@ class AssignmentHelper {
         return { type: 'ready_for_action', input: userInput, certaintyLevel };
     }
     
-    // Detect if user explicitly signals overwhelm/shutdown
+    // GUARDRAIL: Detect if user explicitly signals overwhelm/shutdown
+    // Calming/grounding language should ONLY be shown when:
+    // 1. User explicitly signals overwhelm (e.g., "too much", "can't", "stressed", "overwhelmed")
+    // 2. User selects a "pause" or "this is too much" option
+    // Do NOT show calming language for informational/explanatory inputs like:
+    // - "it's irrelevant"
+    // - "this feels pointless"
+    // - "I don't care about this"
     detectsOverwhelmSignal(input) {
         if (!input) return false;
         const lowerInput = input.toLowerCase();
+        
+        // First, check if this is an informational/explanatory input (NOT overwhelm)
+        // These should NOT trigger calming language
+        const informationalPatterns = [
+            'irrelevant', 'pointless', 'doesn\'t matter', 'doesnt matter', 'don\'t care', 'dont care',
+            'boring', 'useless', 'waste', 'not important', 'not relevant', 'doesn\'t make sense',
+            'doesnt make sense', 'no point', 'why do i need', 'why do we need'
+        ];
+        
+        // If input is purely informational/explanatory (no overwhelm signals), return false
+        const isInformational = informationalPatterns.some(pattern => lowerInput.includes(pattern));
+        if (isInformational) {
+            // Only return true if it ALSO contains explicit overwhelm signals
+            // This prevents informational inputs from triggering calming language
+            const explicitOverwhelmSignals = [
+                'too much', 'can\'t', 'cannot', 'overwhelmed', 'stressed', 'anxious',
+                'panic', 'shut down', 'frozen', 'paralyzed', 'can\'t think', 'can\'t process',
+                'brain won\'t work', 'mind is blank', 'can\'t focus', 'can\'t function',
+                'completely stuck', 'nothing works', 'can\'t do anything', 'i give up',
+                'i\'m done', 'im done', 'i can\'t do this', 'i cannot do this'
+            ];
+            const hasExplicitOverwhelm = explicitOverwhelmSignals.some(signal => lowerInput.includes(signal));
+            if (!hasExplicitOverwhelm) {
+                return false; // Informational input without explicit overwhelm = no calming language
+            }
+        }
+        
+        // Explicit overwhelm signals (from config or hardcoded fallback)
         const overwhelmSignals = [
             'i can\'t', 'i cannot', 'too much', 'too hard', 'i give up',
             'this is too much', 'can\'t do this', 'cannot do this',
@@ -230,6 +265,14 @@ class AssignmentHelper {
      */
     
     // Canonical response flow
+    // SINGLE MODE RULE: Each turn operates in exactly one mode only
+    // Modes: LISTENING, CLARIFYING, OFFERING_DIRECTION, CALMING, STEPPING
+    // Each mode has specific allowed elements:
+    // - LISTENING: message only (no question, no actions)
+    // - CLARIFYING: message + question only (no actions)
+    // - OFFERING_DIRECTION: message + actions only (no question)
+    // - CALMING: message + pause actions only (no question, no other actions)
+    // - STEPPING: steps/actions only (no question, no reassurance)
     // PROPORTIONALITY RULE: Response intensity must match user's emotional/cognitive load
     // - Mild annoyance → simple reflection
     // - Confusion → clarification
@@ -1101,27 +1144,39 @@ class AssignmentHelper {
         }
         
         // If user mentioned difficulty/hard, offer paths
+        // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
         if (lowerInput.includes("hard") || lowerInput.includes("difficult") || 
-            lowerInput.includes("stuck") || lowerInput.includes("overwhelmed")) {
+            lowerInput.includes("stuck")) {
             options.push("Make this smaller");
             options.push("Talk through what's hard");
-            options.push("Pause for now");
+            // Only add pause option if user explicitly signals overwhelm
+            if (hasExplicitOverwhelm || lowerInput.includes("overwhelmed")) {
+                options.push("Pause for now");
+            }
             return options;
         }
         
         // If user mentioned not understanding/getting it
+        // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
         if (lowerInput.includes("don't get") || lowerInput.includes("dont get") || 
             lowerInput.includes("don't understand") || lowerInput.includes("dont understand")) {
             options.push("Help explain this to your teacher");
             options.push("Break this down differently");
-            options.push("Pause for now");
+            // Only add pause option if user explicitly signals overwhelm
+            if (hasExplicitOverwhelm) {
+                options.push("Pause for now");
+            }
             return options;
         }
         
         // Default directional options (actions, not questions)
+        // GUARDRAIL: Only include "Pause for now" if user explicitly signals overwhelm
         options.push("Keep exploring");
         options.push("Make this smaller");
-        options.push("Pause for now");
+        // Only add pause option if user explicitly signals overwhelm
+        if (hasExplicitOverwhelm) {
+            options.push("Pause for now");
+        }
         return options;
     }
     
