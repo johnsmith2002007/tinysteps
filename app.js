@@ -470,7 +470,22 @@ class AssignmentHelper {
         const pauseBtn = document.getElementById('pauseBtn');
         const assignmentInput = document.getElementById('assignmentInput');
 
-        submitBtn.addEventListener('click', () => this.processAssignment());
+        if (!submitBtn) {
+            console.error('submitBtn not found!');
+            return;
+        }
+        
+        if (!assignmentInput) {
+            console.error('assignmentInput not found!');
+            return;
+        }
+
+        console.log('Attaching event listeners...');
+        submitBtn.addEventListener('click', (e) => {
+            console.log('Button clicked!');
+            e.preventDefault();
+            this.processAssignment();
+        });
         assignmentInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && e.ctrlKey) {
                 this.processAssignment();
@@ -507,7 +522,9 @@ class AssignmentHelper {
     }
 
     processAssignment() {
+        console.log('processAssignment called');
         const input = document.getElementById('assignmentInput').value.trim();
+        console.log('Input:', input);
         
         // Check if we're in a conversation flow (answering a question)
         if (this.conversationState && this.conversationState.waitingForAnswer) {
@@ -2920,12 +2937,20 @@ class AssignmentHelper {
 }
 
 // Initialize the app when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+function initializeApp() {
+    console.log('Initializing app...');
+    try {
         window.app = new AssignmentHelper();
-    });
+        console.log('App initialized successfully');
+    } catch (error) {
+        console.error('Error initializing app:', error);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
     // DOM is already ready
-    window.app = new AssignmentHelper();
+    initializeApp();
 }
 
