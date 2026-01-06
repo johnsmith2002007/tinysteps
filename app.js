@@ -91,10 +91,31 @@ class AssignmentHelper {
         // Detect certainty level for proportional response matching
         const certaintyLevel = this.detectCertaintyLevel(userInput);
         
-        // Check for overwhelmed signal first (highest priority)
+        // DOBROWSKI: Distinguish between loss of function (actual overwhelm) and intensity (strong emotion)
+        // Check for loss of function first (highest priority - requires pause)
+        const dobrowskiConfig = (typeof FRANK_CONFIG !== 'undefined' && FRANK_CONFIG.reasoning && 
+                                 FRANK_CONFIG.reasoning.dobrowskiPrinciples && 
+                                 FRANK_CONFIG.reasoning.dobrowskiPrinciples.enabled) 
+                                 ? FRANK_CONFIG.reasoning.dobrowskiPrinciples.intensityAsInformation 
+                                 : null;
+        
+        if (dobrowskiConfig && dobrowskiConfig.lossOfFunctionSignals) {
+            if (dobrowskiConfig.lossOfFunctionSignals.some(signal => lowerInput.includes(signal))) {
+                return { type: 'overwhelmed', input: userInput, certaintyLevel, hasLossOfFunction: true };
+            }
+        }
+        
+        // Check for intensity without loss of function (strong emotion but still functional)
+        if (dobrowskiConfig && dobrowskiConfig.intensityOnlySignals) {
+            if (dobrowskiConfig.intensityOnlySignals.some(signal => lowerInput.includes(signal))) {
+                return { type: 'intense_emotion', input: userInput, certaintyLevel, hasLossOfFunction: false };
+            }
+        }
+        
+        // Fallback: Check for traditional overwhelm signals (if Dobrowski not enabled or no match)
         if (classificationConfig.overwhelmSignals && 
             classificationConfig.overwhelmSignals.some(signal => lowerInput.includes(signal))) {
-            return { type: 'overwhelmed', input: userInput, certaintyLevel };
+            return { type: 'overwhelmed', input: userInput, certaintyLevel, hasLossOfFunction: false };
         }
         
         // Check for request to shrink
@@ -252,12 +273,33 @@ class AssignmentHelper {
                 };
                 
             case 'overwhelmed':
-                // PROPORTIONALITY: Explicit overwhelm gets reassurance + pause option
-                // No additional instruction or regulation - just pause permission
+                // DOBROWSKI: Check if this is loss of function (requires pause) or just intensity
+                const hasLossOfFunction = signal.hasLossOfFunction === true;
+                
+                if (hasLossOfFunction) {
+                    // Actual loss of function - offer pause
+                    return {
+                        mode: MODES.PAUSED,
+                        message: this.gentleReassurance(),
+                        actions: ['Pause', 'Come back later']
+                    };
+                } else {
+                    // Intensity without loss of function - treat as information, not escalation
+                    return {
+                        mode: MODES.LISTENING,
+                        message: this.handleIntensityAsInformation(userInput),
+                        question: this.askFunctionCheckQuestion(),
+                        actions: []
+                    };
+                }
+                
+            case 'intense_emotion':
+                // DOBROWSKI: Strong emotion but still functional - treat as information
                 return {
-                    mode: MODES.PAUSED,
-                    message: this.gentleReassurance(),
-                    actions: ['Pause', 'Come back later']
+                    mode: MODES.LISTENING,
+                    message: this.handleIntensityAsInformation(userInput),
+                    question: this.askFunctionCheckQuestion(),
+                    actions: []
                 };
                 
             case 'request_to_shrink':
@@ -330,13 +372,53 @@ class AssignmentHelper {
     // Mirror emotion using user's language
     // CERTAINTY MATCHING: Use tentative language for low certainty, direct for high
     // LANGUAGE CONSTRAINT: Prefer mirrors over interpretations, avoid absolute claims
+    // DOBROWSKI: Normalize conflict, validate without glorifying
     mirrorEmotion(userInput, certaintyLevel = 'medium') {
         const lowerInput = userInput.toLowerCase();
+        
+        // Check for Dobrowski principles
+        const dobrowskiConfig = (typeof FRANK_CONFIG !== 'undefined' && FRANK_CONFIG.reasoning && 
+                                 FRANK_CONFIG.reasoning.dobrowskiPrinciples && 
+                                 FRANK_CONFIG.reasoning.dobrowskiPrinciples.enabled) 
+                                 ? FRANK_CONFIG.reasoning.dobrowskiPrinciples 
+                                 : null;
         
         // High certainty: direct acknowledgment, no reframing
         // Low certainty: tentative language, hypotheses not conclusions
         const isLowCertainty = certaintyLevel === 'low';
         const isHighCertainty = certaintyLevel === 'high';
+        
+        // DOBROWSKI Principle 1: Normalize inner conflict
+        if (lowerInput.includes("don't know why") || lowerInput.includes("dont know why") || 
+            lowerInput.includes("bother") || lowerInput.includes("bothers me")) {
+            if (dobrowskiConfig && dobrowskiConfig.normalizeConflict && dobrowskiConfig.normalizeConflict.enabled) {
+                // "If it's bothering you this much, it probably matters to you. We don't have to figure out why yet."
+                if (isLowCertainty) {
+                    return "If it's bothering you this much, it probably matters to you. We don't have to figure out why yet.";
+                }
+                return "If it's bothering you this much, it probably matters to you. We don't have to figure out why yet.";
+            }
+        }
+        
+        // DOBROWSKI Principle 3: Validate growth pain without glorifying
+        if (lowerInput.includes("worse") || lowerInput.includes("feeling worse") || 
+            lowerInput.includes("used to") || lowerInput.includes("before")) {
+            if (dobrowskiConfig && dobrowskiConfig.validateWithoutGlorifying && 
+                dobrowskiConfig.validateWithoutGlorifying.enabled) {
+                // "Sometimes feeling worse happens when you're noticing more, not because you're failing. We can take this slowly."
+                return "Sometimes feeling worse happens when you're noticing more, not because you're failing. We can take this slowly.";
+            }
+        }
+        
+        // DOBROWSKI Principle 4: Meaning-making opt-in
+        if (lowerInput.includes("point") || lowerInput.includes("purpose") || 
+            lowerInput.includes("doesn't matter") || lowerInput.includes("doesnt matter")) {
+            if (dobrowskiConfig && dobrowskiConfig.meaningMakingOptIn && 
+                dobrowskiConfig.meaningMakingOptIn.enabled) {
+                // Early: "That question makes sense. We don't need an answer right now."
+                return "That question makes sense. We don't need an answer right now.";
+            }
+        }
         
         if (lowerInput.includes("hate")) {
             // High certainty emotion - acknowledge directly, don't challenge
@@ -372,6 +454,7 @@ class AssignmentHelper {
         
         if (lowerInput.includes("overwhelmed") || lowerInput.includes("too much")) {
             // Only use if user explicitly says overwhelmed (proportionality rule)
+            // But check if it's intensity vs loss of function first (handled in classifyInput)
             return "This looks like a lot.";
         }
         
@@ -518,6 +601,39 @@ class AssignmentHelper {
         // Permission-based statement, no generic reassurance
         // No additional instruction or regulation - just pause permission
         return "You can pause whenever you need to.";
+    }
+    
+    // DOBROWSKI: Handle intensity as information, not escalation
+    // Treat strong reactions as heightened responsiveness, not fragility
+    handleIntensityAsInformation(userInput) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // Check for Dobrowski config
+        const dobrowskiConfig = (typeof FRANK_CONFIG !== 'undefined' && FRANK_CONFIG.reasoning && 
+                                 FRANK_CONFIG.reasoning.dobrowskiPrinciples && 
+                                 FRANK_CONFIG.reasoning.dobrowskiPrinciples.enabled) 
+                                 ? FRANK_CONFIG.reasoning.dobrowskiPrinciples.intensityAsInformation 
+                                 : null;
+        
+        if (lowerInput.includes('unbearable') || lowerInput.includes('too much') || 
+            lowerInput.includes('overwhelming') || lowerInput.includes('intense')) {
+            // DOBROWSKI: "When something feels unbearable, it's often because it's colliding with something important."
+            return "When something feels unbearable, it's often because it's colliding with something important.";
+        }
+        
+        if (lowerInput.includes('bother') || lowerInput.includes('bothers me')) {
+            // DOBROWSKI Principle 1: Normalize conflict - "If it's bothering you this much, it probably matters to you."
+            return "If it's bothering you this much, it probably matters to you.";
+        }
+        
+        // Default: acknowledge intensity without pathologizing
+        return "This feels really intense right now.";
+    }
+    
+    // DOBROWSKI: Ask about function, not just emotion
+    // "Are you still able to think, or do you want to slow things down?"
+    askFunctionCheckQuestion() {
+        return "Are you still able to think, or do you want to slow things down?";
     }
     
     // Permission-based transition to shrinking
