@@ -2,14 +2,19 @@
 
 // Conversation modes - use config if available, otherwise fallback
 // Config-driven from FRANK_CONFIG.conversationModes
+// SINGLE MODE RULE: Each turn operates in exactly one mode only
 const MODES = (typeof FRANK_CONFIG !== 'undefined' && FRANK_CONFIG.conversationModes) 
     ? FRANK_CONFIG.conversationModes
     : {
         LISTENING: 'listening',
         CLARIFYING: 'clarifying',
-        SHRINKING: 'shrinking',
+        OFFERING_DIRECTION: 'offering_direction',
+        CALMING: 'calming',
         STEPPING: 'stepping',
-        PAUSED: 'paused'
+        // Legacy mappings
+        SHRINKING: 'offering_direction',
+        PAUSED: 'calming',
+        UNDERSTANDING: 'listening'
     };
 
 class AssignmentHelper {
@@ -278,14 +283,15 @@ class AssignmentHelper {
                     return this.handleQuestionAnswer(userInput, signal, certaintyLevel, context);
                 }
                 
+                // SINGLE MODE: CLARIFYING mode - message + question only, NO actions
                 // PROPORTIONALITY: Emotional input gets reflection + one question, no actions
                 // CERTAINTY: Match language to user's certainty level
                 const emotionalQuestion = this.askOneClarifyingQuestion(userInput, certaintyLevel);
                 const emotionalResponse = {
-                    mode: MODES.LISTENING,
+                    mode: MODES.CLARIFYING, // CLARIFYING mode: message + question, no actions
                     message: this.mirrorEmotion(userInput, certaintyLevel),
                     question: emotionalQuestion,
-                    actions: []
+                    actions: [] // NO actions in CLARIFYING mode
                 };
                 // Track that we asked a question
                 if (this.conversationContext.length > 0) {
@@ -329,39 +335,66 @@ class AssignmentHelper {
                 
                 if (hasLossOfFunction) {
                     // Actual loss of function - offer pause
+                    // SINGLE MODE: CALMING mode - reassurance + pause options only, NO questions, NO other actions
                     return {
-                        mode: MODES.PAUSED,
+                        mode: MODES.CALMING, // CALMING mode: message + pause actions only
                         message: this.gentleReassurance(),
-                        actions: ['Pause', 'Come back later']
+                        question: null, // NO question in CALMING mode
+                        actions: ['Pause', 'Come back later'] // Only pause options
                     };
                 } else {
                     // Intensity without loss of function - treat as information, not escalation
-                    return {
-                        mode: MODES.LISTENING,
+                    // SINGLE MODE: CLARIFYING mode - message + question only, NO actions
+                    const functionQuestion = this.askFunctionCheckQuestion();
+                    const intensityResponse = {
+                        mode: MODES.CLARIFYING, // CLARIFYING mode: message + question, no actions
                         message: this.handleIntensityAsInformation(userInput),
-                        question: this.askFunctionCheckQuestion(),
-                        actions: []
+                        question: functionQuestion,
+                        actions: [] // NO actions in CLARIFYING mode
                     };
+                    // Track that we asked a question
+                    if (this.conversationContext.length > 0) {
+                        const lastContext = this.conversationContext[this.conversationContext.length - 1];
+                        if (lastContext) {
+                            lastContext.hadQuestion = true;
+                            lastContext.lastQuestion = functionQuestion;
+                        }
+                    }
+                    return intensityResponse;
                 }
                 
             case 'intense_emotion':
                 // DOBROWSKI: Strong emotion but still functional - treat as information
-                return {
-                    mode: MODES.LISTENING,
+                // SINGLE MODE: CLARIFYING mode - message + question only, NO actions
+                const intenseQuestion = this.askFunctionCheckQuestion();
+                const intenseResponse = {
+                    mode: MODES.CLARIFYING, // CLARIFYING mode: message + question, no actions
                     message: this.handleIntensityAsInformation(userInput),
-                    question: this.askFunctionCheckQuestion(),
-                    actions: []
+                    question: intenseQuestion,
+                    actions: [] // NO actions in CLARIFYING mode
                 };
+                // Track that we asked a question
+                if (this.conversationContext.length > 0) {
+                    const lastContext = this.conversationContext[this.conversationContext.length - 1];
+                    if (lastContext) {
+                        lastContext.hadQuestion = true;
+                        lastContext.lastQuestion = intenseQuestion;
+                    }
+                }
+                return intenseResponse;
                 
             case 'request_to_shrink':
+                // SINGLE MODE: OFFERING_DIRECTION mode - message + direction options, NO questions
                 // PROPORTIONALITY: User requested shrinking - offer transition, no escalation
                 return {
-                    mode: MODES.SHRINKING,
+                    mode: MODES.OFFERING_DIRECTION, // OFFERING_DIRECTION mode: message + actions, no questions
                     message: this.permissionBasedTransition(),
+                    question: null, // NO question in OFFERING_DIRECTION mode
                     actions: ['Make this smaller']
                 };
                 
             case 'ready_for_action':
+                // SINGLE MODE: STEPPING mode - steps/actions only, NO questions, NO reassurance
                 // PROPORTIONALITY: Only show actions if user has indicated readiness
                 // Uses config-driven rules from FRANK_CONFIG.actionButtons.requireReadiness
                 // COMMON SENSE: Don't assume readiness - wait for explicit signal
@@ -371,7 +404,7 @@ class AssignmentHelper {
                 
                 const hasIndicatedReadiness = !requireReadiness || 
                                              context.currentMode === MODES.CLARIFYING || 
-                                             context.currentMode === MODES.SHRINKING ||
+                                             context.currentMode === MODES.OFFERING_DIRECTION ||
                                              this.conversationContext.length > 1 ||
                                              // Direct assignment request indicates readiness
                                              (this.conversationContext.length === 1 && 
@@ -379,8 +412,9 @@ class AssignmentHelper {
                                               this.isDirectAssignmentRequest(signal.input));
                 
                 return {
-                    mode: MODES.STEPPING,
+                    mode: MODES.STEPPING, // STEPPING mode: steps/actions only, no questions, no reassurance
                     message: this.presentNextTinyStep(context),
+                    question: null, // NO question in STEPPING mode
                     actions: hasIndicatedReadiness ? ['Start this step', 'Make it smaller'] : []
                 };
                 
@@ -933,13 +967,31 @@ class AssignmentHelper {
         // Use SHRINKING or STEPPING as visible mode (UNDERSTANDING is internal guardrail)
         const nextMode = this.determineNextModeAfterAnswer(userInput, signal);
         
-        return {
-            mode: nextMode, // Visible mode (not UNDERSTANDING - that's internal)
+        // SINGLE MODE: OFFERING_DIRECTION mode - message + direction options, NO questions
+        // Map nextMode to OFFERING_DIRECTION if it was SHRINKING (legacy)
+        const visibleMode = (nextMode === MODES.SHRINKING || nextMode === 'shrinking') 
+            ? MODES.OFFERING_DIRECTION 
+            : nextMode;
+        
+        const response = {
+            mode: visibleMode, // OFFERING_DIRECTION mode: message + actions, no questions
             message: mirror + (understanding ? " " + understanding : ""),
             question: null, // NO QUESTION - user already answered
-            actions: directionChoices,
-            _internalState: 'understanding' // Internal guardrail flag
+            actions: directionChoices
         };
+        
+        // Mark internal understanding state in context (not in response object)
+        if (this.conversationContext.length > 0) {
+            const lastContext = this.conversationContext[this.conversationContext.length - 1];
+            if (lastContext) {
+                lastContext._internalState = 'understanding'; // Internal guardrail flag
+            }
+        }
+        
+        // Validate single mode enforcement
+        this.validateSingleMode(response);
+        
+        return response;
     }
     
     // Detect if input introduces a new topic (vs answering previous question)
@@ -1074,24 +1126,19 @@ class AssignmentHelper {
     }
     
     // Determine next visible mode after answer (UNDERSTANDING is internal, not visible)
+    // SINGLE MODE: After answer, use OFFERING_DIRECTION or STEPPING (never mix)
     determineNextModeAfterAnswer(userInput, signal) {
         const lowerInput = userInput.toLowerCase();
-        
-        // If user wants to shrink, go to SHRINKING
-        if (lowerInput.includes("smaller") || lowerInput.includes("break down") || 
-            lowerInput.includes("simpler")) {
-            return MODES.SHRINKING;
-        }
         
         // If user is ready for action, go to STEPPING
         if (signal.type === 'ready_for_action' || 
             lowerInput.includes("help") || lowerInput.includes("show me") || 
-            lowerInput.includes("how do")) {
+            lowerInput.includes("how do") || lowerInput.includes("start")) {
             return MODES.STEPPING;
         }
         
-        // Default: SHRINKING (offers direction without being too action-oriented)
-        return MODES.SHRINKING;
+        // Default: OFFERING_DIRECTION (offers direction without being too action-oriented)
+        return MODES.OFFERING_DIRECTION;
     }
     
     // Check if there's unresolved ambiguity (only then ask another question)
@@ -1192,13 +1239,19 @@ class AssignmentHelper {
         const lowerInput = lastInput.toLowerCase();
         const buttons = [];
         
-        if (mode === 'listening' || mode === 'clarifying') {
-            // No action buttons in listening/clarifying modes
+        // SINGLE MODE: Each mode has specific button rules
+        if (mode === MODES.LISTENING || mode === 'listening') {
+            // LISTENING mode: no action buttons
             return [];
         }
         
-        if (mode === 'shrinking') {
-            // After clarification, offer action
+        if (mode === MODES.CLARIFYING || mode === 'clarifying') {
+            // CLARIFYING mode: no action buttons (only question)
+            return [];
+        }
+        
+        if (mode === MODES.OFFERING_DIRECTION || mode === MODES.SHRINKING || mode === 'shrinking' || mode === 'offering_direction') {
+            // OFFERING_DIRECTION mode: direction buttons only
             buttons.push({
                 text: 'Want to keep going',
                 action: 'continue'
@@ -1209,7 +1262,7 @@ class AssignmentHelper {
             });
         }
         
-        if (mode === 'stepping') {
+        if (mode === MODES.STEPPING || mode === 'stepping') {
             // Contextual buttons based on what user said
             if (lowerInput.includes('how') || lowerInput.includes('explain')) {
                 buttons.push({
@@ -1436,6 +1489,9 @@ class AssignmentHelper {
                 throw new Error('Invalid response structure - missing mode');
             }
             
+            // Validate single mode enforcement before displaying
+            this.validateSingleMode(response);
+            
             // Set mode from response
             this.setConversationMode(response.mode);
             
@@ -1505,13 +1561,23 @@ class AssignmentHelper {
         }
         
         // Hide/show sections based on mode
-        if (response.mode === MODES.LISTENING || response.mode === MODES.CLARIFYING || 
-            response.mode === MODES.PAUSED) {
+        // SINGLE MODE: Each mode has specific UI requirements
+        const visibleMode = response.mode;
+        if (visibleMode === MODES.LISTENING || visibleMode === MODES.CLARIFYING || 
+            visibleMode === MODES.CALMING || visibleMode === MODES.OFFERING_DIRECTION ||
+            visibleMode === MODES.PAUSED || visibleMode === MODES.SHRINKING) {
             this.hideMiddleSections();
             if (responseHeader) {
                 responseHeader.style.display = 'none';
             }
+        } else if (visibleMode === MODES.STEPPING) {
+            // STEPPING mode: show middle sections for step display
+            this.showMiddleSections();
+            if (responseHeader) {
+                responseHeader.style.display = '';
+            }
         } else {
+            // Fallback
             this.showMiddleSections();
             if (responseHeader) {
                 responseHeader.style.display = '';
@@ -3072,7 +3138,9 @@ class AssignmentHelper {
             // Add contextual feedback buttons based on mode and last input
             const mode = this.conversationMode;
             const lastInput = this.lastUserInput || '';
-            const shouldShowFeedback = mode === 'stepping' || mode === 'shrinking';
+            const shouldShowFeedback = mode === MODES.STEPPING || mode === 'stepping' || 
+                                      mode === MODES.OFFERING_DIRECTION || mode === MODES.SHRINKING || 
+                                      mode === 'shrinking' || mode === 'offering_direction';
             
             if (shouldShowFeedback) {
                 const contextualButtons = this.generateContextualButtons(mode, lastInput);

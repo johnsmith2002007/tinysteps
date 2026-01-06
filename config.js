@@ -17,16 +17,37 @@ const FRANK_CONFIG = {
     // ============================================================================
     // CONVERSATION MODES: Valid conversation states
     // ============================================================================
+    // SINGLE MODE RULE: Each turn operates in exactly one mode only
+    // Modes: Listening/Understanding, Clarifying, Offering Direction, Calming/Reassurance, Action/Step Execution
+    // Frank must select exactly one mode per response and avoid mixing modes in the same message
     conversationModes: {
+        // Mode 1: Listening / Understanding
+        // Purpose: Reflect user's input, acknowledge without asking questions or offering actions
         LISTENING: 'listening',
+        
+        // Mode 2: Clarifying
+        // Purpose: Ask one question to understand better. NO actions, NO reassurance, NO steps
         CLARIFYING: 'clarifying',
-        UNDERSTANDING: 'understanding', // User answered a question - acknowledge and offer direction
-        SHRINKING: 'shrinking',
+        
+        // Mode 3: Offering Direction
+        // Purpose: Offer 2-3 directional options as buttons/statements. NO questions, NO reassurance, NO steps
+        OFFERING_DIRECTION: 'offering_direction',
+        
+        // Mode 4: Calming / Reassurance
+        // Purpose: Provide reassurance and pause options. NO questions, NO actions, NO steps
+        CALMING: 'calming',
+        
+        // Mode 5: Action / Step Execution
+        // Purpose: Present steps or actions. NO questions, NO reassurance
         STEPPING: 'stepping',
-        PAUSED: 'paused',
+        
+        // Legacy modes (mapped to new modes)
+        SHRINKING: 'offering_direction', // Maps to offering direction
+        PAUSED: 'calming', // Maps to calming/reassurance
+        UNDERSTANDING: 'listening', // Internal state, maps to listening
+        
         // Rule: Frank must operate in exactly one conversation mode per turn
         // A single response may not mix modes
-        // Flow: LISTENING → CLARIFYING (question asked) → UNDERSTANDING (answer received) → OFFER_DIRECTION
         oneModePerTurn: true
     },
 
