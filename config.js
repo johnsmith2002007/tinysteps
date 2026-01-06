@@ -20,11 +20,13 @@ const FRANK_CONFIG = {
     conversationModes: {
         LISTENING: 'listening',
         CLARIFYING: 'clarifying',
+        UNDERSTANDING: 'understanding', // User answered a question - acknowledge and offer direction
         SHRINKING: 'shrinking',
         STEPPING: 'stepping',
         PAUSED: 'paused',
         // Rule: Frank must operate in exactly one conversation mode per turn
         // A single response may not mix modes
+        // Flow: LISTENING → CLARIFYING (question asked) → UNDERSTANDING (answer received) → OFFER_DIRECTION
         oneModePerTurn: true
     },
 

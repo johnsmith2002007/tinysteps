@@ -251,6 +251,14 @@ class AssignmentHelper {
             timestamp: Date.now()
         });
         
+        // ANTI-QUESTION-CHAINING: Check if user is answering a previous question
+        const isAnsweringQuestion = this.isAnsweringPreviousQuestion(userInput, context);
+        
+        // If user answered a question, suppress further questions and offer direction instead
+        if (isAnsweringQuestion) {
+            return this.handleQuestionAnswer(userInput, signal, certaintyLevel, context);
+        }
+        
         switch (signal.type) {
             case 'emotional':
                 // PROPORTIONALITY: Emotional input gets reflection + one question, no actions
@@ -263,14 +271,28 @@ class AssignmentHelper {
                 };
                 
             case 'explanatory':
+                // ANTI-QUESTION-CHAINING: If we're already in CLARIFYING mode, user is answering
+                // Don't ask another question - acknowledge and offer direction
+                if (this.conversationMode === MODES.CLARIFYING) {
+                    return this.handleQuestionAnswer(userInput, signal, certaintyLevel, context);
+                }
+                
                 // PROPORTIONALITY: Explanatory input gets meaning reflection + narrowing question
                 // COMMON SENSE: Don't escalate - user is explaining, not asking for solutions
-                return {
+                const explanatoryResponse = {
                     mode: MODES.CLARIFYING,
                     message: this.reflectMeaning(userInput, certaintyLevel),
                     question: this.narrowChoices(userInput, certaintyLevel),
                     actions: []
                 };
+                // Track that we asked a question
+                if (this.conversationContext.length > 0) {
+                    const lastContext = this.conversationContext[this.conversationContext.length - 1];
+                    if (lastContext) {
+                        lastContext.hadQuestion = true;
+                    }
+                }
+                return explanatoryResponse;
                 
             case 'overwhelmed':
                 // DOBROWSKI: Check if this is loss of function (requires pause) or just intensity
@@ -636,6 +658,126 @@ class AssignmentHelper {
         return "Are you still able to think, or do you want to slow things down?";
     }
     
+    // ANTI-QUESTION-CHAINING: Detect if user is answering a previous question
+    isAnsweringPreviousQuestion(userInput, context) {
+        // Check if we're in CLARIFYING mode (means we asked a question)
+        if (this.conversationMode === MODES.CLARIFYING) {
+            // User provided non-empty input - they're answering
+            if (userInput.trim().length > 0) {
+                return true;
+            }
+        }
+        
+        // Check conversation context for previous question
+        if (this.conversationContext.length > 0) {
+            const lastContext = this.conversationContext[this.conversationContext.length - 1];
+            // If last response had a question, and current input is substantial, it's likely an answer
+            if (lastContext && lastContext.hadQuestion && userInput.trim().length > 3) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    // ANTI-QUESTION-CHAINING: Handle when user answers a question
+    // Acknowledge answer, demonstrate understanding, offer direction (not another question)
+    handleQuestionAnswer(userInput, signal, certaintyLevel, context) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // Acknowledge using user's language
+        let acknowledgment = this.acknowledgeAnswer(userInput, certaintyLevel);
+        
+        // Demonstrate understanding of how this refines the problem
+        let understanding = this.demonstrateUnderstanding(userInput, signal);
+        
+        // Offer direction choices (not questions)
+        const directionChoices = this.offerDirectionChoices(userInput, signal);
+        
+        return {
+            mode: MODES.UNDERSTANDING,
+            message: acknowledgment + (understanding ? " " + understanding : ""),
+            question: null, // NO QUESTION - user already answered
+            actions: directionChoices
+        };
+    }
+    
+    // Acknowledge the answer using user's language
+    acknowledgeAnswer(userInput, certaintyLevel) {
+        const lowerInput = userInput.toLowerCase();
+        const isLowCertainty = certaintyLevel === 'low';
+        
+        // Use mirroring to acknowledge
+        if (lowerInput.includes("doesn't feel relevant") || lowerInput.includes("doesnt feel relevant") ||
+            lowerInput.includes("irrelevant")) {
+            if (isLowCertainty) {
+                return "If it feels like it might not be relevant, that can make it harder to care.";
+            }
+            return "If it feels irrelevant, that makes it hard to care or try.";
+        }
+        
+        if (lowerInput.includes("boring") || lowerInput.includes("pointless")) {
+            return "When something doesn't feel meaningful, it's hard to engage with it.";
+        }
+        
+        if (lowerInput.includes("difficult") || lowerInput.includes("hard")) {
+            return "This feels like a lot right now.";
+        }
+        
+        // Default: reflect back what they said
+        return "I hear you.";
+    }
+    
+    // Demonstrate understanding of how this refines the problem
+    demonstrateUnderstanding(userInput, signal) {
+        const lowerInput = userInput.toLowerCase();
+        
+        // Show we understand what they're saying
+        if (lowerInput.includes("irrelevant") || lowerInput.includes("doesn't matter") || 
+            lowerInput.includes("doesnt matter") || lowerInput.includes("pointless")) {
+            return "We can go a few ways from here.";
+        }
+        
+        if (lowerInput.includes("hard") || lowerInput.includes("difficult") || 
+            lowerInput.includes("stuck") || lowerInput.includes("overwhelmed")) {
+            return "We can work with this.";
+        }
+        
+        // Default: show we're moving forward
+        return null;
+    }
+    
+    // Offer direction choices (buttons, not questions)
+    offerDirectionChoices(userInput, signal) {
+        const lowerInput = userInput.toLowerCase();
+        const choices = [];
+        
+        // If user mentioned irrelevance/pointlessness, offer to explore or minimize
+        if (lowerInput.includes("irrelevant") || lowerInput.includes("doesn't matter") || 
+            lowerInput.includes("doesnt matter") || lowerInput.includes("pointless") ||
+            lowerInput.includes("boring")) {
+            choices.push("Want to talk through why it feels pointless?");
+            choices.push("Want help getting through just the minimum?");
+            choices.push("Pause for now");
+            return choices;
+        }
+        
+        // If user mentioned difficulty/hard, offer to break down or pause
+        if (lowerInput.includes("hard") || lowerInput.includes("difficult") || 
+            lowerInput.includes("stuck") || lowerInput.includes("overwhelmed")) {
+            choices.push("Want to make this smaller?");
+            choices.push("Want to talk through what's hard?");
+            choices.push("Pause for now");
+            return choices;
+        }
+        
+        // Default direction choices
+        choices.push("Want to keep exploring?");
+        choices.push("Want to make this smaller?");
+        choices.push("Pause for now");
+        return choices;
+    }
+    
     // Permission-based transition to shrinking
     // PROPORTIONALITY: User requested shrinking - simple transition, no escalation
     permissionBasedTransition() {
@@ -934,6 +1076,17 @@ class AssignmentHelper {
             
             // Set mode from response
             this.setConversationMode(response.mode);
+            
+            // ANTI-QUESTION-CHAINING: Track if we asked a question in this response
+            if (response.question) {
+                // Find the last context entry and mark it as having a question
+                if (this.conversationContext.length > 0) {
+                    const lastContext = this.conversationContext[this.conversationContext.length - 1];
+                    if (lastContext) {
+                        lastContext.hadQuestion = true;
+                    }
+                }
+            }
             
             // Display the response based on mode
             console.log('Displaying response...');
